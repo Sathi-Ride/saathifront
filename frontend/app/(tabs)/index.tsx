@@ -1,21 +1,35 @@
-import { Text, View,  StyleSheet } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import { Card } from 'react-native-paper';
 
-export default function Index() {
+const HomeScreen = () => {
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Home screen</Text>
+      <Card style={styles.card}>
+        <Text style={styles.title}>Welcome to Saathi</Text>
+        <Text>Start your ride with a fair deal!</Text>
+      </Card>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#25292e',
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 16,
+    backgroundColor: '#f5f5f5',
   },
-  text: {
-    color: '#fff',
+  card: {
+    padding: 16,
+    elevation: 4,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
   },
 });
+
+export default HomeScreen;

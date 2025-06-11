@@ -1,31 +1,61 @@
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
-import { TextInput, Button } from 'react-native-paper';
+import { View, StyleSheet, Text, Image } from 'react-native';
+import { Button } from 'react-native-paper';
+import { useRouter } from 'expo-router';
+import Icon from 'react-native-vector-icons/FontAwesome';
 
 const LoginScreen = () => {
-  const [phone, setPhone] = React.useState('');
+  const router = useRouter();
+
+  const handlePLogin = () => {
+    console.log('Login pressed');
+    router.push('/(auth)/phone'); 
+  };
+
+  const handleGLogin = () => {
+    console.log('Google login pressed');
+    router.push('/(auth)/setup?source=google');
+  };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Your app for fair deals</Text>
-      <Text style={styles.subtitle}>Choose rides that are right for you</Text>
-      <TextInput
-        label="Phone Number"
-        value={phone}
-        onChangeText={setPhone}
-        keyboardType="phone-pad"
-        style={styles.input}
-      />
-      <Button mode="contained" style={styles.button} onPress={() => console.log('Login pressed')}>
-        Continue with phone
-      </Button>
-      <TouchableOpacity style={styles.altButton}>
-        <Text>Continue with Google</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.altButton}>
-        <Text>Continue with Passkey</Text>
-      </TouchableOpacity>
-      <Text style={styles.terms}>Joining our app means you agree with our Terms of Use and Privacy Policy</Text>
+      <View style={styles.contentContainer}>
+        <View style={styles.imageContainer}>
+          <Image
+            source={require('../../assets/images/login.jpg')}
+            style={styles.image}
+            resizeMode="contain"
+          />
+        </View>
+        <Text style={styles.title}>Your app for safe ride</Text>
+        <Text style={styles.subtitle}>Rides that feels like friendship</Text>
+      </View>
+
+      <View style={styles.buttonContainer}>
+        <Button 
+          mode="contained" 
+          style={styles.button} 
+          onPress={handlePLogin}
+          contentStyle={styles.buttonContent}
+          icon={() => <Icon name="phone" size={20} color="#000"/>}
+        >
+          Continue with phone
+        </Button>
+        
+        <Button 
+          mode="outlined" 
+          style={styles.googleButton} 
+          onPress={handleGLogin}
+          contentStyle={styles.buttonContent}
+          icon={() => <Icon name="google" size={20} color="#000"/>}
+        >
+          Continue with Google
+        </Button>
+        
+        <Text style={styles.terms}>
+          Joining our app means you agree with our Terms of Use and Privacy Policy. Welcome onboard!
+        </Text>
+      </View>
     </View>
   );
 };
@@ -33,44 +63,66 @@ const LoginScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
     backgroundColor: '#fff',
+  },
+  contentContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  imageContainer: {
+    width: '100%',
+    height: 300,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  image: {
+    width: '100%',
+    height: '90%',
   },
   title: {
-    fontSize: 24,
+    fontSize: 25,
     fontWeight: 'bold',
-    marginBottom: 8,
+    marginBottom: 10,
+    textAlign: 'center',
+    color: '#333',
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#666',
-    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 24,
   },
-  input: {
-    width: '80%',
-    marginBottom: 16,
+  buttonContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 40,
+    paddingTop: 20,
   },
   button: {
-    width: '80%',
-    backgroundColor: '#00ff00',
-    marginBottom: 8,
+    width: '100%',
+    backgroundColor: '#00809D',
+    marginBottom: 12,
+    borderRadius: 12,
   },
-  altButton: {
-    width: '80%',
-    padding: 10,
-    alignItems: 'center',
+  googleButton: {
+    width: '100%',
+    borderColor: '#dadce0',
     borderWidth: 1,
-    borderColor: '#ccc',
-    marginBottom: 8,
-    borderRadius: 8,
+    marginBottom: 20,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+  },
+  buttonContent: {
+    height: 48,
   },
   terms: {
     fontSize: 12,
     color: '#666',
     textAlign: 'center',
-    marginTop: 16,
+    lineHeight: 16,
+    paddingHorizontal: 20,
   },
 });
 
