@@ -1,20 +1,15 @@
-import { Tabs } from 'expo-router';
+import { Stack} from 'expo-router';
 import React from 'react';
-import { useColorScheme } from '@/hooks/useColorScheme';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
-    <Tabs>
-      <Tabs.Screen
-        name="index"
-        options={{ title: 'Home', headerShown: false }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{ title: 'Explore', headerShown: false }}
-      />
-    </Tabs>
-  );
+    <Stack>
+      <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="profile" options={{ headerShown: false }} />
+      <Stack.Screen name="rideHistory" options={{ headerShown: false }} />
+      <Stack.Screen name="driverSelect" options={{ headerShown: false }} />
+      <Stack.Screen name="rideRate" options={{ headerShown: false }} />
+      <Stack.Screen name="rideTracker" options={{ headerShown: false }} />
+    </Stack>
+    );
 }

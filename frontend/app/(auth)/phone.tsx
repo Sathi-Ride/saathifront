@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     padding: 10,
-    marginTop: 10,
+    marginTop: 40,
   },
   contentContainer: {
     flex: 1,
