@@ -158,7 +158,7 @@ export default function Support() {
           </View>
           <View style={styles.appInfoRow}>
             <Text style={styles.appInfoLabel}>Build:</Text>
-            <Text style={styles.appInfoValue}>2024.01.15</Text>
+            <Text style={styles.appInfoValue}>2025.06.15</Text>
           </View>
         </View>
 
