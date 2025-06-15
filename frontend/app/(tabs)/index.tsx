@@ -1,102 +1,118 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  Dimensions, 
-  TouchableOpacity, 
-  ActivityIndicator,
-  StatusBar,
-  Animated
-} from 'react-native';
-import { WebView } from 'react-native-webview';
-import { TextInput, Button } from 'react-native-paper';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+"use client"
 
-const { width, height } = Dimensions.get('window');
+import { useState, useEffect } from "react"
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ActivityIndicator, StatusBar } from "react-native"
+import { WebView } from "react-native-webview"
+import { TextInput } from "react-native-paper"
+import Icon from "react-native-vector-icons/MaterialIcons"
+import { useRouter, useLocalSearchParams } from "expo-router"
+import SidePanel from "../(common)/sidepanel"
 
-const HomeScreen = () => {
-  const { rideInProgress, driverName, from, to, fare, vehicle, progress: initialProgress } = useLocalSearchParams();
-  const getString = (val: string | string[] | undefined) =>
-    Array.isArray(val) ? val[0] ?? '' : val ?? '';
-  const [localFrom, setFrom] = useState<string>(getString(from));
-  const [localTo, setTo] = useState<string>(getString(to));
-  const [localFare, setFare] = useState<string>(getString(fare));
-  const [loading, setLoading] = useState(false);
-  const [selectedVehicle, setSelectedVehicle] = useState(vehicle || 'Moto');
-  const [sidePanelVisible, setSidePanelVisible] = useState(false);
-  const slideAnim = useRef(new Animated.Value(-width * 0.75)).current;
-  const router = useRouter();
-  const [localRideInProgress, setLocalRideInProgress] = useState(rideInProgress === 'true');
-  const [progress, setProgress] = useState(parseInt(initialProgress as string) || 0);
-  const [localDriverName, setLocalDriverName] = useState(driverName || '');
+const { width, height } = Dimensions.get("window")
 
+const PassengerHomeScreen = () => {
+  const { rideInProgress, driverName, from, to, fare, vehicle, progress: initialProgress } = useLocalSearchParams()
+  const getString = (val: string | string[] | undefined) => (Array.isArray(val) ? (val[0] ?? "") : (val ?? ""))
+
+  // Local state - no backend dependencies
+  const [localFrom, setFrom] = useState<string>(getString(from))
+  const [localTo, setTo] = useState<string>(getString(to))
+  const [localFare, setFare] = useState<string>(getString(fare))
+  const [loading, setLoading] = useState(false)
+  const [selectedVehicle, setSelectedVehicle] = useState(getString(vehicle) || "Moto")
+  const [sidePanelVisible, setSidePanelVisible] = useState(false)
+  const router = useRouter()
+  const [localRideInProgress, setLocalRideInProgress] = useState(rideInProgress === "true")
+  const [progress, setProgress] = useState(Number.parseInt(initialProgress as string) || 0)
+  const [localDriverName, setLocalDriverName] = useState(getString(driverName) || "")
+
+  // Mock ride progress simulation - replace with real API calls later
   useEffect(() => {
-    let timer: number;
+    let timer: number
     if (localRideInProgress && progress < 100) {
       timer = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 100) {
-            clearInterval(timer);
+            clearInterval(timer)
             setTimeout(() => {
               router.push({
-                pathname: '/rideRate',
-                params: { driverName: localDriverName, from: localFrom, to: localTo, fare: localFare, vehicle: selectedVehicle },
-              });
-            }, 1000);
-            return 100;
+                pathname: "/rideRate",
+                params: {
+                  driverName: localDriverName,
+                  from: localFrom,
+                  to: localTo,
+                  fare: localFare,
+                  vehicle: selectedVehicle,
+                },
+              })
+            }, 1000)
+            return 100
           }
-          return prev + 5;
-        });
-      }, 1000);
+          return prev + 5
+        })
+      }, 1000)
     }
-    return () => clearInterval(timer);
-  }, [localRideInProgress, progress, localDriverName, localFrom, localTo, localFare, selectedVehicle, router]);
+    return () => clearInterval(timer)
+  }, [localRideInProgress, progress])
 
-  useEffect(() => {
-    if (rideInProgress === 'true' && driverName) {
-      setFrom(getString(from));
-      setTo(getString(to));
-      setFare(getString(fare));
-      setTo(getString(to));
-      setFare(getString(fare));
-      setSelectedVehicle(vehicle || 'Moto');
-      setProgress(parseInt(initialProgress as string) || 0);
-    }
-  }, [rideInProgress, driverName, from, to, fare, vehicle, initialProgress]);
-
-  const handleFindDriver = () => {
-    console.log('Handle Find Driver called', { localFrom, localTo, localFare });
+  // Mock driver search - replace with API call later
+  const handleFindDriver = async () => {
     if (!localFrom || !localTo) {
-      alert('Please enter From and To locations');
-      return;
+      alert("Please enter From and To locations")
+      return
     }
-    setLoading(true);
+
+    setLoading(true)
+
+    // TODO: Replace with actual API call
+    // const response = await fetch('/api/find-driver', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({
+    //     from: localFrom,
+    //     to: localTo,
+    //     vehicle: selectedVehicle,
+    //     fare: localFare
+    //   })
+    // });
+    // const data = await response.json();
+
+    // Mock API delay
     setTimeout(() => {
-      setLoading(false);
-      const distance = Math.sqrt(
-        Math.pow(27.7172 - 27.7089, 2) + Math.pow(85.3240 - 85.3206, 2)
-      ) * 100;
-      const baseFare = distance * (selectedVehicle === 'Moto' ? 2 : 5);
-      const adjustedFare = baseFare * (1 + (Math.random() * 0.1 - 0.05));
-      console.log('Navigating to driver-selection with', { localFrom, localTo, fare: adjustedFare.toFixed(2), vehicle: selectedVehicle });
+      setLoading(false)
+      // Mock fare calculation
+      const mockDistance = Math.random() * 10 + 2 // 2-12 km
+      const baseFare = mockDistance * (selectedVehicle === "Moto" ? 15 : 25)
+      const adjustedFare = baseFare * (1 + (Math.random() * 0.2 - 0.1)) // ±10% variation
+
       router.push({
-        pathname: '/driverSelect',
-        params: { from: localFrom, to: localTo, fare: adjustedFare.toFixed(2), vehicle: selectedVehicle },
-      });
-    }, 2000);
-  };
+        pathname: "/driverSelect",
+        params: {
+          from: localFrom,
+          to: localTo,
+          fare: localFare || adjustedFare.toFixed(2),
+          vehicle: selectedVehicle,
+        },
+      })
+    }, 2000)
+  }
 
-  const selectVehicle = (vehicle: React.SetStateAction<string | string[]>) => {
-    setSelectedVehicle(vehicle);
-  };
+  const selectVehicle = (vehicle: string) => {
+    setSelectedVehicle(vehicle)
+  }
 
+  const handleRoleChange = (newRole: "driver" | "passenger") => {
+    if (newRole === "driver") {
+      router.push("/(driver)")
+    }
+  }
+
+  // Mock location data - replace with real GPS coordinates later
   const demoLocation = {
     latitude: 27.7172,
-    longitude: 85.3240,
+    longitude: 85.324,
     zoom: 13,
-  };
+  }
 
   const mapHtml = `
     <!DOCTYPE html>
@@ -133,74 +149,42 @@ const HomeScreen = () => {
         </script>
       </body>
     </html>
-  `;
+  `
 
   const vehicleOptions = [
-    { id: 'Moto', name: 'Moto', icon: 'motorcycle', passengers: 1, color: '#4CAF50' },
-    { id: 'Ride', name: 'Ride', icon: 'directions-car', passengers: 4, color: '#2196F3' },
-  ];
-
-  const openSidePanel = () => {
-    setSidePanelVisible(true);
-    Animated.timing(slideAnim, {
-      toValue: 0,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const closeSidePanel = () => {
-    Animated.timing(slideAnim, {
-      toValue: -width * 0.75,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => setSidePanelVisible(false));
-  };
-
-  const handleLogout = () => {
-    router.push('/login');
-    closeSidePanel();
-  };
-
-  const handleChangeToDriver = () => {
-    console.log('Change to Driver clicked');
-    closeSidePanel();
-  };
-
-  const navigateToProfile = () => {
-    router.push('/profile');
-    closeSidePanel();
-  };
-
-  const navigateToTripHistory = () => {
-    router.push('/rideHistory');
-    closeSidePanel();
-  };
+    { id: "Moto", name: "Moto", icon: "motorcycle", passengers: 1, color: "#4CAF50" },
+    { id: "Ride", name: "Ride", icon: "directions-car", passengers: 4, color: "#2196F3" },
+  ]
 
   const openRideTracking = () => {
     router.push({
-      pathname: '/rideTracker',
-      params: { driverName: localDriverName, from: localFrom, to: localTo, fare: localFare, vehicle: selectedVehicle, rideInProgress: localRideInProgress.toString(), progress: progress.toString() },
-    });
-  };
+      pathname: "/rideTracker",
+      params: {
+        driverName: localDriverName,
+        from: localFrom,
+        to: localTo,
+        fare: localFare,
+        vehicle: selectedVehicle,
+        rideInProgress: localRideInProgress.toString(),
+        progress: progress.toString(),
+      },
+    })
+  }
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-      
+
       <View style={styles.mapContainer}>
         {!sidePanelVisible && (
-          <TouchableOpacity 
-            style={styles.hamburgerButton} 
-            onPress={openSidePanel}
-          >
+          <TouchableOpacity style={styles.hamburgerButton} onPress={() => setSidePanelVisible(true)}>
             <Icon name="menu" size={24} color="#333" />
           </TouchableOpacity>
         )}
 
         <WebView
           style={styles.map}
-          originWhitelist={['*']}
+          originWhitelist={["*"]}
           source={{ html: mapHtml }}
           scrollEnabled={false}
           showsHorizontalScrollIndicator={false}
@@ -213,27 +197,22 @@ const HomeScreen = () => {
           {vehicleOptions.map((vehicle) => (
             <TouchableOpacity
               key={vehicle.id}
-              style={[
-                styles.vehicleOption,
-                selectedVehicle === vehicle.id && styles.selectedVehicle
-              ]}
+              style={[styles.vehicleOption, selectedVehicle === vehicle.id && styles.selectedVehicle]}
               onPress={() => selectVehicle(vehicle.id)}
             >
               <View style={styles.vehicleIconContainer}>
-                <Icon 
-                  name={vehicle.icon} 
-                  size={24} 
-                  color={selectedVehicle === vehicle.id ? vehicle.color : '#666'} 
-                />
+                <Icon name={vehicle.icon} size={24} color={selectedVehicle === vehicle.id ? vehicle.color : "#666"} />
                 <View style={styles.passengerBadge}>
                   <Icon name="person" size={12} color="#666" />
                   <Text style={styles.passengerCount}>{vehicle.passengers}</Text>
                 </View>
               </View>
-              <Text style={[
-                styles.vehicleName,
-                selectedVehicle === vehicle.id && { color: vehicle.color, fontWeight: '600' }
-              ]}>
+              <Text
+                style={[
+                  styles.vehicleName,
+                  selectedVehicle === vehicle.id && { color: vehicle.color, fontWeight: "600" },
+                ]}
+              >
                 {vehicle.name}
               </Text>
             </TouchableOpacity>
@@ -248,12 +227,11 @@ const HomeScreen = () => {
               value={localFrom}
               onChangeText={setFrom}
               placeholder="From (Pickup Location)"
-              placeholderTextColor={'#ccc'}
+              placeholderTextColor={"#ccc"}
               style={styles.locationInput}
               underlineColor="transparent"
               activeUnderlineColor="transparent"
               contentStyle={styles.inputContent}
-              autoFocus
             />
           </View>
 
@@ -262,7 +240,7 @@ const HomeScreen = () => {
             <TextInput
               mode="flat"
               placeholder="To (Destination)"
-              placeholderTextColor={'#ccc'}
+              placeholderTextColor={"#ccc"}
               value={localTo}
               onChangeText={setTo}
               style={styles.locationInput}
@@ -277,7 +255,7 @@ const HomeScreen = () => {
             <TextInput
               mode="flat"
               placeholder="Offer your fare"
-              placeholderTextColor={'#ccc'}
+              placeholderTextColor={"#ccc"}
               value={localFare}
               onChangeText={setFare}
               style={styles.fareInput}
@@ -296,7 +274,7 @@ const HomeScreen = () => {
         >
           <View style={styles.buttonContent}>
             {loading ? (
-              <ActivityIndicator color="#000" size="small" />
+              <ActivityIndicator color="#fff" size="small" />
             ) : (
               <Text style={styles.buttonText}>Find a driver</Text>
             )}
@@ -305,86 +283,49 @@ const HomeScreen = () => {
       </View>
 
       {localRideInProgress && (
-        <View style={[styles.miniPlayer, { top: height * 0.3, bottom: 'auto' }]}>
-          <Text style={styles.miniPlayerText}>Ride with {localDriverName} - {progress}%</Text>
+        <View style={[styles.miniPlayer, { top: height * 0.3, bottom: "auto" }]}>
+          <Text style={styles.miniPlayerText}>
+            Ride with {localDriverName} - {progress}%
+          </Text>
           <TouchableOpacity style={styles.miniPlayerButton} onPress={openRideTracking}>
             <Icon name="play-arrow" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
       )}
 
-      {sidePanelVisible && (
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity 
-            style={styles.modalBackground} 
-            onPress={closeSidePanel}
-          />
-          <Animated.View style={[styles.sidePanel, { transform: [{ translateX: slideAnim }] }]}>
-            <View style={styles.sidePanelHeader}>
-              <Text style={styles.sidePanelTitle}>Menu</Text>
-              <TouchableOpacity onPress={closeSidePanel}>
-                <Icon name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.menuItems}>
-              <TouchableOpacity style={styles.menuItem} onPress={closeSidePanel}>
-                <Icon name="home" size={24} color="#333" />
-                <Text style={styles.menuText}>Home</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.menuItem} onPress={navigateToTripHistory}>
-                <Icon name="directions-car" size={24} color="#333" />
-                <Text style={styles.menuText}>Trip History</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.menuItem} onPress={navigateToProfile}>
-                <Icon name="person-4" size={24} color="#333" />
-                <Text style={styles.menuText}>Profile</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.menuItem} onPress={closeSidePanel}>
-                <Icon name="contact-support" size={24} color="#333" />
-                <Text style={styles.menuText}>Support</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.bottomButtons}>
-              <TouchableOpacity style={styles.changeToDriverButton} onPress={handleChangeToDriver}>
-                <View style={styles.buttonContent}>
-                  <Text style={styles.buttonText}>Change to Driver</Text>
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                <Icon name="logout" size={24} color="#f44336" />
-                <Text style={styles.logoutText}>Logout</Text>
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        </View>
-      )}
+      <SidePanel
+        visible={sidePanelVisible}
+        onClose={() => setSidePanelVisible(false)}
+        role="passenger"
+        rideInProgress={localRideInProgress}
+        onChangeRole={handleRoleChange}
+      />
     </View>
-  );
-};
+  )
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
   },
   mapContainer: {
     flex: 1,
-    position: 'relative',
+    position: "relative",
   },
   hamburgerButton: {
-    position: 'absolute',
+    position: "absolute",
     top: 50,
     left: 16,
     zIndex: 1000,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 20,
     width: 40,
     height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     elevation: 3,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -394,64 +335,64 @@ const styles = StyleSheet.create({
     width: width,
   },
   bottomSheet: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingTop: 20,
     paddingHorizontal: 16,
     paddingBottom: 20,
     elevation: 10,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
   },
   vehicleContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexDirection: "row",
+    justifyContent: "space-around",
     marginBottom: 24,
     paddingHorizontal: 8,
   },
   vehicleOption: {
-    alignItems: 'center',
+    alignItems: "center",
     padding: 12,
     borderRadius: 12,
     minWidth: 80,
   },
   selectedVehicle: {
-    backgroundColor: '#f0f9ff',
+    backgroundColor: "#f0f9ff",
   },
   vehicleIconContainer: {
-    position: 'relative',
+    position: "relative",
     marginBottom: 8,
   },
   passengerBadge: {
-    position: 'absolute',
+    position: "absolute",
     top: -8,
     right: -8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f5f5f5",
     borderRadius: 10,
     paddingHorizontal: 4,
     paddingVertical: 2,
   },
   passengerCount: {
     fontSize: 10,
-    color: '#666',
+    color: "#666",
     marginLeft: 2,
   },
   vehicleName: {
     fontSize: 12,
-    color: '#333',
-    textAlign: 'center',
+    color: "#333",
+    textAlign: "center",
   },
   inputSection: {
     marginBottom: 24,
   },
   inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 16,
     paddingHorizontal: 4,
   },
@@ -460,25 +401,25 @@ const styles = StyleSheet.create({
   },
   rupeeSymbol: {
     fontSize: 18,
-    color: '#333',
+    color: "#333",
     marginRight: 16,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   locationInput: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
     fontSize: 16,
   },
   fareInput: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
     fontSize: 16,
   },
   inputContent: {
     paddingHorizontal: 0,
   },
   findDriverButton: {
-    backgroundColor: '#075B5E',
+    backgroundColor: "#075B5E",
     borderRadius: 12,
     paddingVertical: 16,
     paddingHorizontal: 20,
@@ -487,111 +428,38 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
   buttonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '600',
-    flex: 1,
-    textAlign: 'center',
-  },
-  modalOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-  },
-  modalBackground: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-  },
-  sidePanel: {
-    width: width * 0.75,
-    backgroundColor: '#fff',
-    height: '100%',
-    paddingTop: 50,
-  },
-  sidePanelHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  sidePanelTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
-  },
-  menuItems: {
-    paddingTop: 20,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  bottomButtons: {
-    paddingTop: 20,
-    paddingBottom: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  changeToDriverButton: {
-    backgroundColor: '#075B5E',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    marginBottom: 10,
-    marginTop: 420,
-    width: width * 0.65,
-    marginLeft: 20,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-  },
-  logoutText: {
-    color: '#f44336',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  menuText: {
-    fontSize: 16,
-    color: '#333',
-    marginLeft: 16,
+    fontWeight: "600",
+    textAlign: "center",
   },
   miniPlayer: {
-    position: 'absolute',
+    position: "absolute",
     left: 0,
     right: 0,
     height: 60,
-    backgroundColor: '#075B5E',
-    flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor: "#075B5E",
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
     zIndex: 1000,
   },
   miniPlayerText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   miniPlayerButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: "#4CAF50",
     padding: 8,
     borderRadius: 8,
   },
-});
+})
 
-export default HomeScreen;
+export default PassengerHomeScreen
