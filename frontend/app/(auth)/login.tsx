@@ -49,7 +49,7 @@ const LoginScreen = () => {
           contentStyle={styles.buttonContent}
           icon={() => <Icon name="google" size={20} color="#000"/>}
         >
-          Continue with Google
+          <Text style={styles.googleButtonText}>Continue with Google</Text>
         </Button>
         
         <Text style={styles.terms}>
@@ -113,6 +113,10 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderRadius: 12,
     backgroundColor: '#fff',
+  },
+  googleButtonText: {
+    fontWeight: '400',
+    color: "#075B5E",
   },
   buttonContent: {
     height: 48,

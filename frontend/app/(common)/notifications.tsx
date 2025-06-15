@@ -14,15 +14,15 @@ const Notifications = () => {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleBackPress}>
-          <Icon name="arrow-back" size={24} color="#333" />
+        <TouchableOpacity style={styles.headerTitle} onPress={handleBackPress}>
+          <Icon name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
       </View>
       <View style={styles.content}>
-        <Icon name="ufo" size={80} color="#333" style={styles.icon} />
+        <Icon name="notifications" size={80} color="#333" style={styles.icon} />
         <Text style={styles.title}>You are all up to date</Text>
-        <Text style={styles.subtitle}>No new notifications — come back soon</Text>
+        <Text style={styles.subtitle}>No new notifications</Text>
       </View>
     </View>
   );
@@ -40,14 +40,14 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
-    marginTop: 40,
+    marginTop: 25,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#333',
+    color: '#000',
     marginLeft: 16,
-    marginTop: 40,
+    marginTop: 25,
   },
   content: {
     flex: 1,

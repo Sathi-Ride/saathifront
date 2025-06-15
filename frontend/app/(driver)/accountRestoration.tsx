@@ -9,7 +9,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, ChevronDown } from 'lucide-react-native';
+import { ArrowLeft } from 'lucide-react-native';
 
 const AccountRestoration = () => {
   const router = useRouter();
@@ -89,6 +89,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     justifyContent: 'center',
+    marginTop: 30,
   },
   content: {
     flex: 1,
@@ -153,7 +154,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   nextButtonActive: {
-    backgroundColor: '#7ED321',
+    backgroundColor: '#075B5E',
   },
   nextButtonText: {
     fontSize: 18,
@@ -161,7 +162,7 @@ const styles = StyleSheet.create({
     color: '#999',
   },
   nextButtonTextActive: {
-    color: '#333',
+    color: '#fff',
   },
 });
 

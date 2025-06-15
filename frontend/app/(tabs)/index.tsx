@@ -283,14 +283,27 @@ const PassengerHomeScreen = () => {
       </View>
 
       {localRideInProgress && (
-        <View style={[styles.miniPlayer, { top: height * 0.3, bottom: "auto" }]}>
-          <Text style={styles.miniPlayerText}>
-            Ride with {localDriverName} - {progress}%
-          </Text>
-          <TouchableOpacity style={styles.miniPlayerButton} onPress={openRideTracking}>
-            <Icon name="play-arrow" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.miniPlayer} onPress={openRideTracking}>
+          <View style={styles.miniPlayerContent}>
+            <View style={styles.miniPlayerInfo}>
+              <View style={styles.miniPlayerIcon}>
+                <Icon name="directions-car" size={16} color="#fff" />
+              </View>
+              <View style={styles.miniPlayerText}>
+                <Text style={styles.miniPlayerTitle}>Ride in Progress</Text>
+                <Text style={styles.miniPlayerSubtitle}>
+                  {localDriverName} • {progress}% complete
+                </Text>
+              </View>
+            </View>
+            <View style={styles.miniPlayerActions}>
+              <View style={styles.progressIndicator}>
+                <View style={[styles.progressFill, { width: `${progress}%` }]} />
+              </View>
+              <Icon name="keyboard-arrow-up" size={24} color="#fff" />
+            </View>
+          </View>
+        </TouchableOpacity>
       )}
 
       <SidePanel
@@ -340,7 +353,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     paddingTop: 20,
     paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingBottom: 20, // Add space for mini-player
     elevation: 10,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -2 },
@@ -440,25 +453,66 @@ const styles = StyleSheet.create({
   },
   miniPlayer: {
     position: "absolute",
+    bottom: 0,
     left: 0,
     right: 0,
-    height: 60,
     backgroundColor: "#075B5E",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 25,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
     zIndex: 1000,
   },
-  miniPlayerText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "500",
+  miniPlayerContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  miniPlayerButton: {
-    backgroundColor: "#4CAF50",
-    padding: 8,
-    borderRadius: 8,
+  miniPlayerInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  miniPlayerIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  miniPlayerText: {
+    flex: 1,
+  },
+  miniPlayerTitle: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  miniPlayerSubtitle: {
+    color: "#B8E6E8",
+    fontSize: 12,
+  },
+  miniPlayerActions: {
+    alignItems: "center",
+    gap: 8,
+  },
+  progressIndicator: {
+    width: 40,
+    height: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: "#fff",
+    borderRadius: 2,
   },
 })
 

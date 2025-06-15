@@ -8,7 +8,8 @@ import {
   StatusBar,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, ChevronRight } from 'lucide-react-native';
+import { ArrowLeft, ChevronRight} from 'lucide-react-native';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const ChooseVehicle = () => {
   const router = useRouter();
@@ -26,9 +27,9 @@ const ChooseVehicle = () => {
   };
 
   const vehicles = [
-    { id: 'car', name: 'Car', icon: '🚗' },
-    { id: 'rickshaw', name: 'Rickshaw', icon: '🛺' },
-    { id: 'motorcycle', name: 'Motorcycle', icon: '🏍️' },
+    { id: 'car', name: 'Car', iconName: 'car' },
+    { id: 'rickshaw', name: 'Rickshaw', iconName: 'rickshaw' },
+    { id: 'motorcycle', name: 'Motorcycle', iconName: 'motorbike' },
   ];
 
   return (
@@ -57,7 +58,7 @@ const ChooseVehicle = () => {
             >
               <View style={styles.vehicleContent}>
                 <View style={styles.vehicleIcon}>
-                  <Text style={styles.vehicleEmoji}>{vehicle.icon}</Text>
+                  <MaterialCommunityIcons name={vehicle.iconName} size={32} color="#333" />
                 </View>
                 <Text style={styles.vehicleName}>{vehicle.name}</Text>
               </View>

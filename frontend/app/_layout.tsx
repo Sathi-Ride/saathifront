@@ -22,6 +22,7 @@ export default function RootLayout() {
         <Stack.Screen name="(common)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="(driver)" options={{ headerShown: false }} />
+        <Stack.Screen name="(regSteps)" options={{ headerShown: false }} />
         <Stack.Screen name="+not-found" />
       </Stack>
       <StatusBar style="auto" />

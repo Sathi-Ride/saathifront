@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, StyleSheet, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -8,6 +8,7 @@ const VerifyScreen = () => {
   const router = useRouter();
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
+  const inputRefs = useRef<(TextInput | null)[]>([]);
 
   const handleVerify = () => {
     setLoading(true);
@@ -19,8 +20,17 @@ const VerifyScreen = () => {
 
   const handleKeyPress = (index: number, value: string) => {
     const newCode = [...code];
-    newCode[index] = value;
+    newCode[index] = value[0] || ''; // Take only the first character
     setCode(newCode);
+
+    // Move focus to next input if a digit is entered
+    if (value && index < code.length - 1) {
+      inputRefs.current[index + 1]?.focus();
+    }
+    // Move focus to previous input if backspace is pressed and current is empty
+    else if (!value && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
   };
 
   return (
@@ -35,11 +45,13 @@ const VerifyScreen = () => {
           {code.map((digit, index) => (
             <TextInput
               key={index}
+              ref={(ref) => { inputRefs.current[index] = ref; }}
               style={styles.codeInput}
               value={digit}
               onChangeText={(value) => handleKeyPress(index, value)}
               maxLength={1}
               keyboardType="numeric"
+              autoFocus={index === 0} // Auto-focus the first input
             />
           ))}
         </View>
