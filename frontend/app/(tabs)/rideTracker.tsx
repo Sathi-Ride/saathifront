@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, StatusBar, SafeAreaView } from "react-native"
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, StatusBar, SafeAreaView, Linking, Alert } from "react-native"
 import { WebView } from "react-native-webview"
 import Icon from "react-native-vector-icons/MaterialIcons"
 import { useRouter, useLocalSearchParams } from "expo-router"
@@ -9,7 +9,7 @@ import { useRouter, useLocalSearchParams } from "expo-router"
 const { width, height } = Dimensions.get("window")
 
 const RideTrackingScreen = () => {
-  const { driverName, from, to, fare, vehicle, rideInProgress, progress: initialProgress } = useLocalSearchParams()
+  const { driverName, from, to, fare, vehicle, rideInProgress, progress: initialProgress, driverPhone } = useLocalSearchParams()
   const router = useRouter()
   const [progress, setProgress] = useState(Number.parseInt(initialProgress as string) || 0)
   const [currentCoords, setCurrentCoords] = useState([27.7172, 85.324]) // Starting point
@@ -111,6 +111,18 @@ const RideTrackingScreen = () => {
     </html>
   `
 
+  const handleCallPress = () => {
+    const phoneNumber = `tel:${driverPhone}`
+    Linking.openURL(phoneNumber).catch(() => Alert.alert("Error", "Unable to open phone app"))
+  }
+
+  const handleMessagePress = () => {
+    router.push({
+      pathname: "/messaging",
+      params: { driverName, driverPhone },
+    })
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#075B5E" />
@@ -124,7 +136,7 @@ const RideTrackingScreen = () => {
           <Text style={styles.headerTitle}>Live Tracking</Text>
           <Text style={styles.headerSubtitle}>{getProgressStatus()}</Text>
         </View>
-        <TouchableOpacity style={styles.callButton}>
+        <TouchableOpacity style={styles.callButton} onPress={handleCallPress}>
           <Icon name="phone" size={24} color="#075B5E" />
         </TouchableOpacity>
       </View>
@@ -168,10 +180,10 @@ const RideTrackingScreen = () => {
             </View>
           </View>
           <View style={styles.driverActions}>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleCallPress}>
               <Icon name="phone" size={20} color="#075B5E" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleMessagePress}>
               <Icon name="message" size={20} color="#075B5E" />
             </TouchableOpacity>
           </View>
