@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, StatusBar, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
@@ -12,19 +12,56 @@ const VehicleInfo = () => {
     router.back();
   };
 
+  const handleNavigate = (screen: string) => {
+    switch (screen) {
+      case 'brand':
+        router.push('/(vehDetails)/vBrand');
+        break;
+      case 'registrationPlate':
+        router.push('/(vehDetails)/regPlate');
+        break;
+      case 'picture':
+        router.push('/(vehDetails)/vPicture');
+        break;
+      case 'billbook':
+        router.push('/(vehDetails)/vBillbook');
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={handleBack}>
           <Icon name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Vehicle</Text>
+        <Text style={styles.headerTitle}>Vehicle Info</Text>
+        <TouchableOpacity onPress={handleBack} style={styles.closeButton}>
+          <Text style={styles.closeText}>Close</Text>
+        </TouchableOpacity>
       </View>
       <View style={styles.content}>
-        <Text style={styles.text}>Vehicle Info Content (Demo)</Text>
-        <TouchableOpacity style={styles.saveButton} onPress={handleBack}>
-          <Text style={styles.saveButtonText}>Back</Text>
+        <TouchableOpacity style={styles.option} onPress={() => handleNavigate('brand')}>
+          <Text style={styles.optionText}>Brand</Text>
+          <Icon name="chevron-right" size={24} color="#075B5E" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.option} onPress={() => handleNavigate('registrationPlate')}>
+          <Text style={styles.optionText}>Registration plate</Text>
+          <Icon name="chevron-right" size={24} color="#075B5E" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.option} onPress={() => handleNavigate('picture')}>
+          <Text style={styles.optionText}>Picture</Text>
+          <Icon name="chevron-right" size={24} color="#075B5E" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.option} onPress={() => handleNavigate('billbook')}>
+          <Text style={styles.optionText}>Billbook</Text>
+          <Icon name="chevron-right" size={24} color="#075B5E" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.doneButton} onPress={handleBack} disabled={true}>
+          <Text style={styles.doneButtonText}>Done</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -35,47 +72,68 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    paddingTop: 40,
+    paddingTop: 30,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingBottom: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+    backgroundColor: '#fff',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '600',
     color: '#333',
-    marginLeft: 16,
+  },
+  closeButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  closeText: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     paddingHorizontal: 16,
+    paddingTop: 20,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    margin: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  text: {
+  option: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  optionText: {
     fontSize: 16,
     color: '#333',
-    marginBottom: 20,
-    textAlign: 'center',
+    fontWeight: '500',
   },
-  saveButton: {
-    backgroundColor: '#00809D',
-    borderRadius: 12,
+  doneButton: {
+    backgroundColor: '#075B5E',
+    borderRadius: 25,
     paddingVertical: 16,
     alignItems: 'center',
-    marginHorizontal: 16,
-    position: 'absolute',
-    bottom: 20,
-    width: width - 32,
+    marginTop: 20,
   },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
+  doneButtonText: {
+    color: '#999',
+    fontSize: 18,
     fontWeight: '600',
   },
 });
