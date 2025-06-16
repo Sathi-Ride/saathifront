@@ -60,7 +60,7 @@ const Billbook = () => {
               <Image source={{ uri: regPhoto }} style={styles.image} />
             ) : (
               <Image
-                source={{ uri: 'https://via.placeholder.com/200' }}
+                source={require('../../assets/images/billbookpc.png')} // Replace with actual placeholder
                 style={styles.image}
                 resizeMode="contain"
               />
@@ -78,7 +78,7 @@ const Billbook = () => {
               <Image source={{ uri: descPhoto }} style={styles.image} />
             ) : (
               <Image
-                source={{ uri: 'https://via.placeholder.com/200' }}
+                source={require('../../assets/images/billbook2pc.png')} // Replace with actual placeholder
                 style={styles.image}
                 resizeMode="contain"
               />

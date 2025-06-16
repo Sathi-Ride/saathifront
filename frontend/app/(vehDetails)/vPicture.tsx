@@ -48,7 +48,7 @@ const Picture = () => {
             <Image source={{ uri: vehiclePhoto }} style={styles.image} />
           ) : (
             <Image
-              source={{ uri: 'https://via.placeholder.com/200' }} // Replace with actual placeholder
+              source={{ uri: 'https://halacarly.com/assets/images/loadingCar.png' }} // Replace with actual placeholder
               style={styles.image}
               resizeMode="contain"
             />
