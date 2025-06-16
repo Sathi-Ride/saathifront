@@ -1,7 +1,7 @@
 import { Stack} from 'expo-router';
 import React from 'react';
 
-export default function TabLayout() {
+export default function RegLayout() {
   return (
     <Stack>
       <Stack.Screen name="basicProfile" options={{ headerShown: false }} />

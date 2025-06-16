@@ -1,7 +1,7 @@
 import { Stack} from 'expo-router';
 import React from 'react';
 
-export default function TabLayout() {
+export default function DetailsLayout() {
   return (
     <Stack>
       <Stack.Screen name="vBillbook" options={{ headerShown: false }} />
