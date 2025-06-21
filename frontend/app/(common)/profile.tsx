@@ -1,28 +1,68 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, StatusBar } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, StatusBar, Alert } from 'react-native';
 import { TextInput, Button } from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
+import apiClient from '../utils/apiClient';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 const ProfileSettingsScreen = () => {
+  const router = useRouter();
   const [name, setName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
-  const [city, setCity] = useState('');
-  const router = useRouter();
+  const [mobile, setMobile] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [imageUri, setImageUri] = useState('https://www.shutterstock.com/image-vector/default-avatar-photo-placeholder-grey-600nw-2007531536.jpg'); // Default image
 
-  const handleSave = () => {
-    // Handle save logic
-    console.log('Profile saved:', { name, lastName, email, city });
-    router.back();
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const response = await apiClient.get('me');
+        const userData = response.data.data;
+        setName(userData.firstName || '');
+        setLastName(userData.lastName || '');
+        setEmail(userData.email || '');
+        setMobile(userData.mobile || '');
+        // If the backend supports a profile picture URL, set it here
+        // setImageUri(userData.profilePicture || imageUri);
+      } catch (err) {
+        console.error('Failed to fetch user data:', err);
+        Alert.alert('Error', 'Failed to load profile data. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUserData();
+  }, []);
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const updateUserDto = { firstName: name, lastName, email };
+      const response = await apiClient.patch('me', updateUserDto);
+      if (response.data.statusCode === 200) {
+        Alert.alert('Success', 'Profile updated successfully');
+        router.back();
+      }
+    } catch (err) {
+      console.error('Failed to update profile:', err);
+      Alert.alert('Error', 'Failed to update profile. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleImageUpload = () => {
-    // Handle image upload logic
+    // Placeholder for image upload logic
+    Alert.alert('Info', 'Image upload functionality is not implemented yet.');
     console.log('Image upload triggered');
   };
+
+  if (loading) {
+    return <Text>Loading...</Text>;
+  }
 
   return (
     <View style={styles.container}>
@@ -31,13 +71,13 @@ const ProfileSettingsScreen = () => {
         <TouchableOpacity onPress={() => router.back()}>
           <Icon name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile settings</Text>
+        <Text style={styles.headerTitle}>Profile Settings</Text>
       </View>
       <View style={styles.profileContainer}>
         <View style={styles.profileImageContainer}>
           <Image
             style={styles.profileImage}
-            source={{ uri: 'https://www.shutterstock.com/image-vector/default-avatar-photo-placeholder-grey-600nw-2007531536.jpg' }} // Placeholder image
+            source={{ uri: imageUri }}
           />
           <TouchableOpacity style={styles.addImageButton} onPress={handleImageUpload}>
             <Icon name="add" size={24} color="#fff" />
@@ -47,8 +87,8 @@ const ProfileSettingsScreen = () => {
       <View style={styles.inputContainer}>
         <TextInput
           mode="flat"
-          placeholder='Enter your first name'
-          placeholderTextColor={'#ccc'}
+          placeholder="Enter your first name"
+          placeholderTextColor="#ccc"
           value={name}
           onChangeText={setName}
           style={styles.input}
@@ -57,8 +97,8 @@ const ProfileSettingsScreen = () => {
         />
         <TextInput
           mode="flat"
-          placeholder='Enter your last name'
-          placeholderTextColor={'#ccc'}
+          placeholder="Enter your last name"
+          placeholderTextColor="#ccc"
           value={lastName}
           onChangeText={setLastName}
           style={styles.input}
@@ -69,8 +109,8 @@ const ProfileSettingsScreen = () => {
           mode="flat"
           value={email}
           onChangeText={setEmail}
-          placeholder='Enter your email'
-          placeholderTextColor={'#ccc'}      
+          placeholder="Enter your email"
+          placeholderTextColor="#ccc"
           keyboardType="email-address"
           autoCapitalize="none"
           style={styles.input}
@@ -78,19 +118,18 @@ const ProfileSettingsScreen = () => {
           activeUnderlineColor="transparent"
         />
         <TextInput
-            mode="flat"
-            value={city}
-            onChangeText={setCity}
-            style={styles.input}
-            underlineColor="transparent"
-            placeholder='Enter your city'
-            placeholderTextColor={'#ccc'}
-            activeUnderlineColor="transparent"
-            editable={false}
+          mode="flat"
+          value={mobile}
+          style={styles.input}
+          underlineColor="transparent"
+          placeholder="Your phone number"
+          placeholderTextColor="#ccc"
+          activeUnderlineColor="transparent"
+          editable={false}
         />
       </View>
-      <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-        <Text style={styles.saveButtonText}>Save</Text>
+      <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={loading}>
+        <Text style={styles.saveButtonText}>{loading ? 'Saving...' : 'Save'}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -146,15 +185,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   input: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    marginBottom: 16,
-    paddingHorizontal: 12,
-    height: 50,
-  },
-  cityInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#f5f5f5',
     borderRadius: 8,
     marginBottom: 16,

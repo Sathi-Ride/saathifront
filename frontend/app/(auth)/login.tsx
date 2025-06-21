@@ -9,7 +9,7 @@ const LoginScreen = () => {
 
   const handlePLogin = () => {
     console.log('Login pressed');
-    router.push('/(auth)/phone'); 
+    router.push('/(auth)/phoneLogin'); 
   };
 
   const handleGLogin = () => {
@@ -131,3 +131,4 @@ const styles = StyleSheet.create({
 });
 
 export default LoginScreen;
+
