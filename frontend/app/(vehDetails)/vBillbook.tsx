@@ -2,25 +2,40 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, StatusBar, Image, Alert, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import * as ImagePicker from 'expo-image-picker';
+import { useDriverRegistration } from '../DriverRegistrationContext';
 
 const { width, height } = Dimensions.get('window');
 
 const Billbook = () => {
   const router = useRouter();
-  const [regPhoto, setRegPhoto] = useState<string | null>(null);
-  const [descPhoto, setDescPhoto] = useState<string | null>(null);
-  const [billbookNumber, setBillbookNumber] = useState('');
+  const { registrationData, updateRegistrationData } = useDriverRegistration();
+  const [regPhoto, setRegPhoto] = useState<string | null>(registrationData.blueBookFrontImgPath || null);
+  const [descPhoto, setDescPhoto] = useState<string | null>(registrationData.blueBookBackImgPath || null);
+  const [billbookNumber, setBillbookNumber] = useState(registrationData.billbookNumber || '');
 
   const handleBack = () => {
     router.back();
   };
 
-  const handleAddPhoto = (type: string, setPhoto: React.Dispatch<React.SetStateAction<string | null>>) => {
-    Alert.alert('Add Photo', `Upload ${type} photo`, [
-      { text: 'Camera', onPress: () => console.log(`Open camera for ${type}`) },
-      { text: 'Gallery', onPress: () => console.log(`Open gallery for ${type}`) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+  const handleAddPhoto = async (setPhoto: React.Dispatch<React.SetStateAction<string | null>>) => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permissionResult.granted === false) {
+      Alert.alert("Permission required", "You need to allow access to your photos to upload an image.");
+      return;
+    }
+
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [10, 7],
+      quality: 1,
+    });
+
+    if (!pickerResult.canceled) {
+      const uri = pickerResult.assets[0].uri;
+      setPhoto(uri);
+    }
   };
 
   const handleDone = () => {
@@ -28,7 +43,13 @@ const Billbook = () => {
       Alert.alert('Error', 'Please upload both billbook photos and enter the billbook number');
       return;
     }
-    router.push('/(regSteps)/vehicleInfo?completed=billbook');
+    updateRegistrationData({
+      ...registrationData,
+      blueBookFrontImgPath: regPhoto,
+      blueBookBackImgPath: descPhoto,
+      billbookNumber,
+    });
+    router.push('/(regSteps)/reviewAndSubmit');
   };
 
   return (
@@ -66,7 +87,7 @@ const Billbook = () => {
               />
             )}
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto('registration', setRegPhoto)}>
+          <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto(setRegPhoto)}>
             <Text style={styles.addButtonText}>Add a photo</Text>
           </TouchableOpacity>
           <Text style={styles.instructions}>
@@ -84,7 +105,7 @@ const Billbook = () => {
               />
             )}
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto('description', setDescPhoto)}>
+          <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto(setDescPhoto)}>
             <Text style={styles.addButtonText}>Add a photo</Text>
           </TouchableOpacity>
           <Text style={styles.instructions}>

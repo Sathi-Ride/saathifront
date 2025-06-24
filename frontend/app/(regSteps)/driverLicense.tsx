@@ -2,20 +2,39 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, Dimensions, StatusBar } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import * as ImagePicker from 'expo-image-picker';
+import { useDriverRegistration } from '../DriverRegistrationContext';
 
 const { width, height } = Dimensions.get('window');
 
 const License = () => {
   const router = useRouter();
-  const [driverLicensePhoto, setDriverLicensePhoto] = useState(null);
-  const [nationalIdPhoto, setNationalIdPhoto] = useState(null);
+  const { registrationData, updateRegistrationData } = useDriverRegistration();
+  const [driverLicensePhoto, setDriverLicensePhoto] = useState<string | null>(registrationData.licenseFrontImgPath || null);
+  const [nationalIdPhoto, setNationalIdPhoto] = useState<string | null>(registrationData.citizenshipDocFrontImgPath || null);
 
-  const handleAddPhoto = (type: string) => {
-    Alert.alert('Add Photo', `Upload ${type} photo`, [
-      { text: 'Camera', onPress: () => console.log(`Open camera for ${type}`) },
-      { text: 'Gallery', onPress: () => console.log(`Open gallery for ${type}`) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+  const handleAddPhoto = async (type: 'driver_license' | 'national_id') => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permissionResult.granted === false) {
+      Alert.alert("Permission required", "You need to allow access to your photos to upload an image.");
+      return;
+    }
+
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [10, 7],
+      quality: 1,
+    });
+
+    if (!pickerResult.canceled) {
+      const uri = pickerResult.assets[0].uri;
+      if (type === 'driver_license') {
+        setDriverLicensePhoto(uri);
+      } else {
+        setNationalIdPhoto(uri);
+      }
+    }
   };
 
   const handleNext = () => {
@@ -23,6 +42,11 @@ const License = () => {
       Alert.alert('Error', 'Please upload both driver license and national ID photos');
       return;
     }
+    updateRegistrationData({
+      ...registrationData,
+      licenseFrontImgPath: driverLicensePhoto,
+      citizenshipDocFrontImgPath: nationalIdPhoto,
+    });
     router.push('/(regSteps)/registerSelfie');
   };
 
@@ -53,7 +77,7 @@ const License = () => {
               />
             )}
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto('driver license')}>
+          <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto('driver_license')}>
             <Text style={styles.addButtonText}>Add a photo</Text>
           </TouchableOpacity>
         </View>
@@ -70,7 +94,7 @@ const License = () => {
               />
             )}
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto('national ID')}>
+          <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto('national_id')}>
             <Text style={styles.addButtonText}>Add a photo</Text>
           </TouchableOpacity>
         </View>

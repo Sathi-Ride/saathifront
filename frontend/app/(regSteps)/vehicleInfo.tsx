@@ -1,12 +1,16 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions, StatusBar, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, StatusBar, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import apiClient from '../utils/apiClient';
+import { useDriverRegistration } from '../DriverRegistrationContext';
 
 const { width, height } = Dimensions.get('window');
 
 const VehicleInfo = () => {
   const router = useRouter();
+  const { registrationData } = useDriverRegistration();
+  const [loading, setLoading] = useState(false);
 
   const handleBack = () => {
     router.back();
@@ -29,6 +33,32 @@ const VehicleInfo = () => {
       default:
         break;
     }
+  };
+
+  // Example: check if all required fields are present (customize as needed)
+  const isComplete = registrationData &&
+    registrationData.citizenship &&
+    registrationData.citizenshipNumber &&
+    registrationData.citizenshipDocFrontImgPath &&
+    registrationData.citizenshipDocBackImgPath &&
+    registrationData.licenseNum &&
+    registrationData.licenseExpiry &&
+    registrationData.licenseFrontImgPath &&
+    registrationData.vehicleType &&
+    registrationData.vehicleRegNum &&
+    registrationData.vehicleMake &&
+    registrationData.vehicleModel &&
+    registrationData.vehicleYear &&
+    registrationData.vehicleColor &&
+    registrationData.blueBookFrontImgPath &&
+    registrationData.blueBookBackImgPath;
+
+  const handleSubmit = () => {
+    if (!isComplete) {
+      Alert.alert('Error', 'Please complete all registration steps.');
+      return;
+    }
+    router.push('/(regSteps)/reviewAndSubmit');
   };
 
   return (
@@ -60,8 +90,16 @@ const VehicleInfo = () => {
           <Text style={styles.optionText}>Billbook</Text>
           <Icon name="chevron-right" size={24} color="#075B5E" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.doneButton} onPress={handleBack} disabled={true}>
-          <Text style={styles.doneButtonText}>Done</Text>
+        <TouchableOpacity
+          style={[styles.doneButton, (!isComplete || loading) && { backgroundColor: '#ccc' }]}
+          onPress={handleSubmit}
+          disabled={!isComplete || loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.doneButtonText}>Submit Registration</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -132,7 +170,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   doneButtonText: {
-    color: '#999',
+    color: '#fff',
     fontSize: 18,
     fontWeight: '600',
   },

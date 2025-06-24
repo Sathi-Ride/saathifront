@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, StatusBar, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useDriverRegistration } from '../DriverRegistrationContext';
 
 const { width, height } = Dimensions.get('window');
 
 const RegistrationPlate = () => {
   const router = useRouter();
-  const [plateNumber, setPlateNumber] = useState('');
+  const { registrationData, updateRegistrationData } = useDriverRegistration();
+  const [plateNumber, setPlateNumber] = useState(registrationData.vehicleRegNum || '');
 
   const handleBack = () => {
     router.back();
@@ -18,7 +20,11 @@ const RegistrationPlate = () => {
       Alert.alert('Error', 'Please enter a registration plate number');
       return;
     }
-    router.push('/(regSteps)/vehicleInfo?completed=registrationPlate');
+    updateRegistrationData({
+      ...registrationData,
+      vehicleRegNum: plateNumber,
+    });
+    router.push('/(vehDetails)/vPicture');
   };
 
   return (

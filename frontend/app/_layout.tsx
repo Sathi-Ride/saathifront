@@ -4,6 +4,8 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import React from 'react';
+import { DriverRegistrationProvider } from './DriverRegistrationContext';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -16,17 +18,19 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack initialRouteName="(auth)">
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="(common)" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="(driver)" options={{ headerShown: false }} />
-        <Stack.Screen name="(regSteps)" options={{ headerShown: false }} />
-        <Stack.Screen name="(vehDetails)" options={{ headerShown: false }} />  
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <DriverRegistrationProvider>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <Stack initialRouteName="(auth)">
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+          <Stack.Screen name="(common)" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="(driver)" options={{ headerShown: false }} />
+          <Stack.Screen name="(regSteps)" options={{ headerShown: false }} />
+          <Stack.Screen name="(vehDetails)" options={{ headerShown: false }} />  
+          <Stack.Screen name="+not-found" />
+        </Stack>
+        <StatusBar style="auto" />
+      </ThemeProvider>
+    </DriverRegistrationProvider>
   );
 }

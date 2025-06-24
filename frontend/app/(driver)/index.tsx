@@ -1,16 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
-  StatusBar, 
-  Dimensions,
-  SafeAreaView 
-} from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, StatusBar, Dimensions, SafeAreaView, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Clock, BrushCleaning, Star, CarFront } from 'lucide-react-native';
 import SidePanel from '../(common)/sidepanel';
+import apiClient from '../utils/apiClient';
 
 const { width, height } = Dimensions.get('window');
 
@@ -21,65 +14,70 @@ const HomeScreen = () => {
   const [role, setRole] = useState<'driver' | 'passenger'>('driver');
   const [rideInProgress, setRideInProgress] = useState(false);
   const [isAccountRestored, setIsAccountRestored] = useState(false);
+  const [vehicleDetails, setVehicleDetails] = useState({ type: '', licensePlate: '', model: '' });
+  const [passengerRatings, setPassengerRatings] = useState({ averageRating: 0, totalReviews: 0 });
+  const [recentRide, setRecentRide] = useState({ from: '', to: '', date: '', fare: '' });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (initialRestored === 'true') {
       setIsAccountRestored(true);
+      fetchProfile();
+    } else {
+      setLoading(false);
     }
   }, [initialRestored]);
 
-  const openSidePanel = () => {
-    setSidePanelVisible(true);
+  const fetchProfile = async () => {
+    try {
+      setLoading(true);
+      const response = await apiClient.get('driver-profile');
+      if (response.data.data) {
+        const profile = response.data.data;
+        setVehicleDetails({
+          type: profile.vehicleType?.name || '',
+          licensePlate: profile.vehicleRegNum || '',
+          model: profile.vehicleModel || '',
+        });
+        setPassengerRatings({
+          averageRating: profile.rating || 0,
+          totalReviews: profile.totalRides || 0,
+        });
+        setRecentRide({
+          from: profile.lastRide?.pickupLocation || 'Pickup Location',
+          to: profile.lastRide?.dropoffLocation || 'Destination',
+          date: profile.lastRide?.date ? new Date(profile.lastRide.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+          fare: profile.lastRide?.fare ? `₹${profile.lastRide.fare}` : '₹500',
+        });
+      } else {
+        setIsAccountRestored(false); // Reset if no profile exists
+      }
+    } catch (err) {
+      console.error('Failed to fetch profile:', err);
+      setIsAccountRestored(false); // Assume no profile on error
+      Alert.alert('Error', 'Failed to load profile data.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const closeSidePanel = () => {
-    setSidePanelVisible(false);
-  };
-
+  const openSidePanel = () => setSidePanelVisible(true);
+  const closeSidePanel = () => setSidePanelVisible(false);
   const handleChangeRole = (newRole: 'driver' | 'passenger') => {
     setRole(newRole);
-    if (newRole === 'passenger') {
-      router.push('/(tabs)');
-    }
+    if (newRole === 'passenger') router.push('/(tabs)');
     closeSidePanel();
   };
 
-  const handleDriverPress = () => {
-    router.push('/registerVehicle');
-  };
+  const handleDriverPress = () => router.push('/registerVehicle');
+  const handleAccountPress = () => router.push('/accountRestoration');
+  const handlePassengerMode = () => router.push('/(tabs)');
 
-  const handleAccountPress = () => {
-    router.push('/accountRestoration');
-  };
-
-  const handlePassengerMode = () => {
-    router.push('/(tabs)');
-  };
-
-  // Dummy data for post-restoration sections (API-ready structure)
-  const vehicleDetails = {
-    type: 'Car',
-    licensePlate: 'KA 01 AB 1234',
-    model: 'Toyota Corolla',
-  };
-
-  const passengerRatings = {
-    averageRating: 4.7,
-    totalReviews: 15,
-  };
-
-  const recentRide = {
-    from: 'Pickup Location',
-    to: 'Destination',
-    date: 'June 14, 2025',
-    fare: '₹500',
-  };
+  if (loading) return <Text>Loading...</Text>;
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
-      
-      {/* Header with hamburger menu */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.hamburgerButton} onPress={openSidePanel}>
           <View style={styles.hamburgerLine} />
@@ -87,31 +85,24 @@ const HomeScreen = () => {
           <View style={styles.hamburgerLine} />
         </TouchableOpacity>
       </View>
-
       <View style={styles.content}>
-        {/* Income Card */}
         <View style={styles.incomeCard}>
           <Text style={styles.incomeTitle}>Tips for drivers</Text>
-          
           <View style={styles.benefitItem}>
             <Clock size={20} color="#333" />
             <Text style={styles.benefitText}>Peak hours are 8-10 AM and 6-8 PM</Text>
           </View>
-          
           <View style={styles.benefitItem}>
             <BrushCleaning size={20} color="#333" />
             <Text style={styles.benefitText}>Keep your vehicle clean</Text>
           </View>
-          
           <View style={styles.benefitItem}>
             <Star size={20} color="#333" />
             <Text style={styles.benefitText}>Maintain good ratings</Text>
           </View>
         </View>
-
         {!isAccountRestored ? (
           <>
-            {/* Pre-restoration Buttons */}
             <TouchableOpacity style={styles.driverButton} onPress={handleDriverPress}>
               <View style={styles.driverContent}>
                 <View style={styles.carIcon}>
@@ -120,12 +111,10 @@ const HomeScreen = () => {
                 <Text style={styles.driverText}>Driver</Text>
               </View>
             </TouchableOpacity>
-
             <View style={styles.bottomSection}>
               <TouchableOpacity style={styles.accountButton} onPress={handleAccountPress}>
                 <Text style={styles.accountText}>I already have an account</Text>
               </TouchableOpacity>
-              
               <TouchableOpacity onPress={handlePassengerMode}>
                 <Text style={styles.passengerText}>Go to passenger mode</Text>
               </TouchableOpacity>
@@ -133,20 +122,17 @@ const HomeScreen = () => {
           </>
         ) : (
           <>
-            {/* Post-restoration Sections */}
             <View style={styles.vehicleDetailsCard}>
               <Text style={styles.sectionTitle}>Vehicle Details</Text>
               <Text style={styles.detailText}>Type: {vehicleDetails.type}</Text>
               <Text style={styles.detailText}>License Plate: {vehicleDetails.licensePlate}</Text>
               <Text style={styles.detailText}>Model: {vehicleDetails.model}</Text>
             </View>
-
             <View style={styles.ratingsCard}>
               <Text style={styles.sectionTitle}>Passenger Ratings</Text>
               <Text style={styles.detailText}>Average Rating: {passengerRatings.averageRating} / 5</Text>
               <Text style={styles.detailText}>Total Reviews: {passengerRatings.totalReviews}</Text>
             </View>
-
             <View style={styles.recentRideCard}>
               <Text style={styles.sectionTitle}>Recent Ride</Text>
               <Text style={styles.detailText}>From: {recentRide.from}</Text>
@@ -157,7 +143,6 @@ const HomeScreen = () => {
           </>
         )}
       </View>
-
       <SidePanel
         visible={sidePanelVisible}
         onClose={closeSidePanel}

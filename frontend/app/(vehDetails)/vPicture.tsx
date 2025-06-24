@@ -2,23 +2,37 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions, StatusBar, Image, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import * as ImagePicker from 'expo-image-picker';
+import { useDriverRegistration } from '../DriverRegistrationContext';
 
 const { width, height } = Dimensions.get('window');
 
 const Picture = () => {
   const router = useRouter();
-  const [vehiclePhoto, setVehiclePhoto] = useState(null);
+  const { registrationData, updateRegistrationData } = useDriverRegistration();
+  const [vehiclePhoto, setVehiclePhoto] = useState<string | null>(registrationData.vehiclePhoto || null);
 
   const handleBack = () => {
     router.back();
   };
 
-  const handleAddPhoto = () => {
-    Alert.alert('Add Photo', 'Upload vehicle photo', [
-      { text: 'Camera', onPress: () => console.log('Open camera for vehicle photo') },
-      { text: 'Gallery', onPress: () => console.log('Open gallery for vehicle photo') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+  const handleAddPhoto = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permissionResult.granted === false) {
+      Alert.alert("Permission required", "You need to allow access to your photos to upload an image.");
+      return;
+    }
+
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+    });
+
+    if (!pickerResult.canceled) {
+        setVehiclePhoto(pickerResult.assets[0].uri);
+    }
   };
 
   const handleDone = () => {
@@ -26,7 +40,11 @@ const Picture = () => {
       Alert.alert('Error', 'Please upload a vehicle photo');
       return;
     }
-    router.push('/(regSteps)/vehicleInfo?completed=picture');
+    updateRegistrationData({
+      ...registrationData,
+      vehiclePhoto,
+    });
+    router.push('/(vehDetails)/vBillbook');
   };
 
   return (

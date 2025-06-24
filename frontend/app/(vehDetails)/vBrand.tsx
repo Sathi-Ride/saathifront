@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, StatusBar, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useDriverRegistration } from '../DriverRegistrationContext';
 
 const { width, height } = Dimensions.get('window');
 
 const Brand = () => {
   const router = useRouter();
-  const [brand, setBrand] = useState('');
+  const { registrationData, updateRegistrationData } = useDriverRegistration();
+  const [brand, setBrand] = useState(registrationData.vehicleMake || '');
 
   const handleBack = () => {
     router.back();
@@ -18,7 +20,11 @@ const Brand = () => {
       Alert.alert('Error', 'Please enter a brand');
       return;
     }
-    router.push('/(regSteps)/vehicleInfo?completed=brand');
+    updateRegistrationData({
+      ...registrationData,
+      vehicleMake: brand,
+    });
+    router.push('/(vehDetails)/regPlate');
   };
 
   return (

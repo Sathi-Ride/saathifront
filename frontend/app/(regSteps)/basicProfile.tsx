@@ -1,27 +1,51 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, StatusBar, Alert } from 'react-native';
 import { TextInput, Button } from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { useDriverRegistration } from '../DriverRegistrationContext';
 
 const { width, height } = Dimensions.get('window');
 
 const ProfileSettingsScreen = () => {
-  const [name, setName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
-  const [city, setCity] = useState('');
   const router = useRouter();
+  const { registrationData, updateRegistrationData } = useDriverRegistration();
+  const [name, setName] = useState(registrationData.firstName || '');
+  const [lastName, setLastName] = useState(registrationData.lastName || '');
+  const [email, setEmail] = useState(registrationData.email || '');
+  const [city, setCity] = useState(registrationData.city || '');
+  const [profileImage, setProfileImage] = useState<string | null>(registrationData.profileImage || null);
 
   const handleSave = () => {
-    // Handle save logic
-    console.log('Profile saved:', { name, lastName, email, city });
-    router.back();
+    updateRegistrationData({
+      ...registrationData,
+      firstName: name,
+      lastName,
+      email,
+      city,
+      profileImage,
+    });
+    router.push('/(regSteps)/driverLicense');
   };
 
-  const handleImageUpload = () => {
-    // Handle image upload logic
-    console.log('Image upload triggered');
+  const handleImageUpload = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permissionResult.granted === false) {
+      Alert.alert("Permission required", "You need to allow access to your photos to upload an image.");
+      return;
+    }
+
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
+
+    if (!pickerResult.canceled) {
+      setProfileImage(pickerResult.assets[0].uri);
+    }
   };
 
   return (
@@ -37,7 +61,7 @@ const ProfileSettingsScreen = () => {
         <View style={styles.profileImageContainer}>
           <Image
             style={styles.profileImage}
-            source={{ uri: 'https://www.shutterstock.com/image-vector/default-avatar-photo-placeholder-grey-600nw-2007531536.jpg' }} // Placeholder image
+            source={{ uri: profileImage || 'https://www.shutterstock.com/image-vector/default-avatar-photo-placeholder-grey-600nw-2007531536.jpg' }} // Placeholder image
           />
           <TouchableOpacity style={styles.addImageButton} onPress={handleImageUpload}>
             <Icon name="add" size={24} color="#fff" />
@@ -86,7 +110,6 @@ const ProfileSettingsScreen = () => {
             placeholder='Enter your city'
             placeholderTextColor={'#ccc'}
             activeUnderlineColor="transparent"
-            editable={false}
         />
       </View>
       <TouchableOpacity style={styles.saveButton} onPress={handleSave}>

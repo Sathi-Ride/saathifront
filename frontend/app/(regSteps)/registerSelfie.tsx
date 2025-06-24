@@ -2,19 +2,33 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, Dimensions, StatusBar } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import * as ImagePicker from 'expo-image-picker';
+import { useDriverRegistration } from '../DriverRegistrationContext';
 
 const { width, height } = Dimensions.get('window');
 
 const Selfie = () => {
   const router = useRouter();
-  const [selfiePhoto, setSelfiePhoto] = useState(null);
+  const { registrationData, updateRegistrationData } = useDriverRegistration();
+  const [selfiePhoto, setSelfiePhoto] = useState<string | null>(registrationData.selfiePhoto || null);
 
-  const handleAddPhoto = () => {
-    Alert.alert('Add Photo', 'Upload selfie with ID', [
-      { text: 'Camera', onPress: () => console.log('Open camera for selfie') },
-      { text: 'Gallery', onPress: () => console.log('Open gallery for selfie') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+  const handleAddPhoto = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permissionResult.granted === false) {
+      Alert.alert("Permission required", "You need to allow access to your photos to upload an image.");
+      return;
+    }
+
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [4, 4],
+      quality: 1,
+    });
+
+    if (!pickerResult.canceled) {
+      setSelfiePhoto(pickerResult.assets[0].uri);
+    }
   };
 
   const handleDone = () => {
@@ -22,7 +36,11 @@ const Selfie = () => {
       Alert.alert('Error', 'Please upload a selfie with your driver license');
       return;
     }
-    router.push('/(regSteps)/vehicleInfo');
+    updateRegistrationData({
+      ...registrationData,
+      selfiePhoto,
+    });
+    router.push('/(vehDetails)/vBrand');
   };
 
   return (

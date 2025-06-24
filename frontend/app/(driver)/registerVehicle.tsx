@@ -10,9 +10,11 @@ import {
 import { useRouter } from 'expo-router';
 import { ArrowLeft, ChevronRight} from 'lucide-react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useDriverRegistration } from '../DriverRegistrationContext';
 
 const ChooseVehicle = () => {
   const router = useRouter();
+  const { updateRegistrationData } = useDriverRegistration();
 
   const handleBack = () => {
     router.back();
@@ -23,6 +25,7 @@ const ChooseVehicle = () => {
   };
 
   const handleVehicleSelect = (vehicleType: string) => {
+    updateRegistrationData({ vehicleType });
     router.push(`/registration?vehicle=${vehicleType}`);
   };
 

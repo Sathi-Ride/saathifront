@@ -2,11 +2,9 @@
 
 import type React from "react"
 import { useRef, useEffect } from "react"
-import { View, Text, TouchableOpacity, StyleSheet, Animated, Dimensions, Alert } from "react-native"
+import { View, Text, TouchableOpacity, StyleSheet, Animated, Dimensions } from "react-native"
 import Icon from "react-native-vector-icons/MaterialIcons"
 import { useRouter } from "expo-router"
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import apiClient, { setAccessToken } from "../utils/apiClient";
 
 const { width } = Dimensions.get("window")
 
@@ -55,20 +53,11 @@ const SidePanel: React.FC<SidePanelProps> = ({ visible, onClose, role, rideInPro
     onClose()
   }
 
-  const handleLogout = async () => {
-    try {
-      // Clear access token from apiClient
-      setAccessToken('');
-      // Clear tokens from AsyncStorage
-      await AsyncStorage.removeItem('accessToken');
-      await AsyncStorage.removeItem('refreshToken');
-      // Navigate to login screen and close side panel
-      router.push("/login");
-      onClose();
-    } catch (err) {
-      console.error('Failed to logout:', err);
-      Alert.alert('Error', 'Failed to logout. Please try again.');
-    }
+  const handleLogout = () => {
+    // TODO: Clear local storage/async storage when backend is ready
+    // await AsyncStorage.clear();
+    router.push("/login")
+    onClose()
   }
 
   const handleChangeRole = () => {
