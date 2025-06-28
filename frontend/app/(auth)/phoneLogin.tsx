@@ -4,31 +4,71 @@ import { Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import apiClient from '../utils/apiClient';
+import Toast from '../../components/ui/Toast';
 
 const PhoneLoginScreen = () => {
   const router = useRouter();
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{
+    visible: boolean;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    setToast({ visible: true, message, type });
+  };
+
+  const hideToast = () => {
+    setToast(prev => ({ ...prev, visible: false }));
+  };
+
+  const validatePhone = (phoneNumber: string) => {
+    // Basic phone validation for Nepal numbers
+    const phoneRegex = /^(\+977|977)?[9][6-8]\d{8}$/;
+    return phoneRegex.test(phoneNumber.replace(/\s/g, ''));
+  };
 
   const handleVerify = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const mobile = phone.trim();
-      const response = await apiClient.post('/auth/login', { mobile });
+    const trimmedPhone = phone.trim();
+    
+    if (!trimmedPhone) {
+      showToast('Please enter your phone number', 'error');
+      return;
+    }
 
-      if (response.data.statusCode === 201) { // OTP sent successfully
-        router.push({
-          pathname: '/(auth)/verify',
-          params: { mobile }
-        });
+    if (!validatePhone(trimmedPhone)) {
+      showToast('Please enter a valid phone number', 'error');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      const response = await apiClient.post('/auth/login', { mobile: trimmedPhone });
+
+      if (response.data.statusCode === 201) {
+        showToast('OTP sent successfully!', 'success');
+        setTimeout(() => {
+          router.push({
+            pathname: '/(auth)/verify',
+            params: { mobile: trimmedPhone }
+          });
+        }, 1500);
       } else {
-        setError('Unexpected response. Please try again.');
+        showToast('Failed to send OTP. Please try again.', 'error');
       }
-    } catch (err) {
-      setError('Failed to send OTP. Please try again.');
-      console.error(err);
+    } catch (err: any) {
+      let errorMessage = 'Failed to send OTP. Please try again.';
+      if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      }
+      showToast(errorMessage, 'error');
     } finally {
       setLoading(false);
     }
@@ -39,9 +79,11 @@ const PhoneLoginScreen = () => {
       <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
         <Icon name="arrow-left" size={20} color="#000" />
       </TouchableOpacity>
+      
       <View style={styles.contentContainer}>
         <Text style={styles.title}>Continue with Phone</Text>
         <Text style={styles.subtitle}>Enter your phone number to proceed</Text>
+        
         <TextInput
           style={styles.input}
           value={phone}
@@ -50,8 +92,9 @@ const PhoneLoginScreen = () => {
           placeholder="Enter your phone number"
           placeholderTextColor="#ccc"
           autoFocus
+          maxLength={15}
         />
-        {error && <Text style={styles.error}>{error}</Text>}
+        
         <Button
           mode="contained"
           style={styles.button}
@@ -59,29 +102,83 @@ const PhoneLoginScreen = () => {
           disabled={loading || !phone.trim()}
           contentStyle={styles.buttonContent}
         >
-          {loading ? <ActivityIndicator color="#000" /> : 'Verify'}
+          {loading ? <ActivityIndicator color="#fff" /> : 'Send OTP'}
         </Button>
+        
         <TouchableOpacity onPress={() => router.push('/(auth)/phoneRegister')}>
-          <Text style={styles.link}>Don’t have an account? Register</Text>
+          <Text style={styles.link}>Don't have an account? Register</Text>
         </TouchableOpacity>
       </View>
+      
       <View style={styles.keyboardPlaceholder} />
+
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={hideToast}
+        duration={4000}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingHorizontal: 16 },
-  backButton: { padding: 10, marginTop: 40 },
-  contentContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  title: { fontSize: 25, fontWeight: 'bold', marginBottom: 10, textAlign: 'center', color: '#333' },
-  subtitle: { fontSize: 15, color: '#666', textAlign: 'center', marginBottom: 30 },
-  input: { width: '100%', height: 48, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, paddingHorizontal: 10, marginBottom: 15, color: '#000' },
-  error: { color: 'red', marginBottom: 10 },
-  button: { width: '100%', backgroundColor: '#00809D', borderRadius: 12 },
-  buttonContent: { height: 48 },
-  link: { color: '#00809D', marginTop: 15, textDecorationLine: 'underline' },
-  keyboardPlaceholder: { height: 200 },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#fff', 
+    paddingHorizontal: 16 
+  },
+  backButton: { 
+    padding: 10, 
+    marginTop: 40 
+  },
+  contentContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  title: { 
+    fontSize: 25, 
+    fontWeight: 'bold', 
+    marginBottom: 10, 
+    textAlign: 'center', 
+    color: '#333' 
+  },
+  subtitle: { 
+    fontSize: 15, 
+    color: '#666', 
+    textAlign: 'center', 
+    marginBottom: 30 
+  },
+  input: { 
+    width: '100%', 
+    height: 48, 
+    borderWidth: 1, 
+    borderColor: '#ccc', 
+    borderRadius: 8, 
+    paddingHorizontal: 10, 
+    marginBottom: 15, 
+    color: '#000',
+    fontSize: 16
+  },
+  button: { 
+    width: '100%', 
+    backgroundColor: '#00809D', 
+    borderRadius: 12 
+  },
+  buttonContent: { 
+    height: 48 
+  },
+  link: { 
+    color: '#00809D', 
+    marginTop: 15, 
+    textDecorationLine: 'underline',
+    fontSize: 16
+  },
+  keyboardPlaceholder: { 
+    height: 200 
+  },
 });
 
 export default PhoneLoginScreen;

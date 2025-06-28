@@ -1,5 +1,3 @@
-"use client"
-
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -20,24 +18,21 @@ import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 
 const { width, height } = Dimensions.get('window');
 
-const RideTrackerScreen = () => {
+const DriverRideTrackerScreen = () => {
   const params = useLocalSearchParams();
   const router = useRouter();
   
   const rideId = params.rideId as string;
-  const driverName = params.driverName as string;
+  const passengerName = params.passengerName as string;
   const from = params.from as string;
   const to = params.to as string;
   const fare = params.fare as string;
   const vehicle = params.vehicle as string;
-  const rideInProgress = params.rideInProgress === 'true';
-  const initialProgress = Number(params.progress) || 0;
 
-  const [progress, setProgress] = useState(initialProgress);
   const [rideStatus, setRideStatus] = useState<'accepted' | 'in-progress' | 'completed'>('accepted');
-  const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [estimatedArrival, setEstimatedArrival] = useState<string>('');
-  const [rideDetails, setRideDetails] = useState<any>(null);
+  const [progress, setProgress] = useState(0);
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [passengerLocation, setPassengerLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{
     visible: boolean;
@@ -49,7 +44,7 @@ const RideTrackerScreen = () => {
     type: 'info',
   });
 
-  const progressAnimation = useRef(new Animated.Value(initialProgress)).current;
+  const progressAnimation = useRef(new Animated.Value(0)).current;
   const pulseAnimation = useRef(new Animated.Value(1)).current;
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
@@ -61,39 +56,25 @@ const RideTrackerScreen = () => {
   };
 
   useEffect(() => {
-    loadRideDetails();
-    startProgressSimulation();
+    initializeTracker();
     startPulseAnimation();
   }, []);
 
-  const loadRideDetails = async () => {
+  const initializeTracker = async () => {
     try {
-      if (rideId) {
-        const details = await rideService.getRideDetails(rideId);
-        if (details) {
-          setRideDetails(details);
-          setRideStatus(details.status as any);
-        }
-      }
+      // Get current location
+      const location = await locationService.getCurrentLocation();
+      setCurrentLocation({ lat: location.latitude, lng: location.longitude });
+
+      // Start location tracking
+      await locationService.startLocationTracking((newLocation) => {
+        setCurrentLocation({ lat: newLocation.latitude, lng: newLocation.longitude });
+      });
+
+      // Set passenger location (mock for now)
+      setPassengerLocation({ lat: 27.7172, lng: 85.324 });
     } catch (error) {
-      console.error('Error loading ride details:', error);
-    }
-  };
-
-  const startProgressSimulation = () => {
-    if (rideInProgress && progress < 100) {
-      const timer = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 100) {
-            clearInterval(timer);
-            handleRideComplete();
-            return 100;
-          }
-          return prev + 2;
-        });
-      }, 2000);
-
-      return () => clearInterval(timer);
+      showToast('Error initializing tracker', 'error');
     }
   };
 
@@ -114,49 +95,49 @@ const RideTrackerScreen = () => {
     ).start();
   };
 
-  const handleRideComplete = () => {
-    setRideStatus('completed');
-    showToast('Ride completed! Please rate your driver', 'success');
-    setTimeout(() => {
-      router.push({
-        pathname: '/(tabs)/rideRate',
-        params: {
-          rideId,
-          driverName,
-          from,
-          to,
-          fare,
-          vehicle,
-        },
-      });
-    }, 2000);
+  const handleStartRide = async () => {
+    setLoading(true);
+    showToast('Starting ride...', 'info');
+
+    try {
+      const success = await rideService.startRide(rideId);
+      if (success) {
+        setRideStatus('in-progress');
+        showToast('Ride started!', 'success');
+        startProgressSimulation();
+      } else {
+        showToast('Failed to start ride', 'error');
+      }
+    } catch (error) {
+      showToast('Error starting ride', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleCancelRide = () => {
+  const handleCompleteRide = async () => {
     Alert.alert(
-      'Cancel Ride',
-      'Are you sure you want to cancel this ride?',
+      'Complete Ride',
+      'Are you sure you want to complete this ride?',
       [
         { text: 'No', style: 'cancel' },
         {
           text: 'Yes',
-          style: 'destructive',
           onPress: async () => {
             setLoading(true);
             try {
-              if (rideId) {
-                const success = await rideService.cancelRide(rideId);
-                if (success) {
-                  showToast('Ride cancelled successfully', 'info');
-                  setTimeout(() => {
-                    router.push('/(tabs)');
-                  }, 1500);
-                } else {
-                  showToast('Failed to cancel ride', 'error');
-                }
+              const success = await rideService.completeRide(rideId);
+              if (success) {
+                setRideStatus('completed');
+                showToast('Ride completed!', 'success');
+                setTimeout(() => {
+                  router.push('/(driver)');
+                }, 2000);
+              } else {
+                showToast('Failed to complete ride', 'error');
               }
             } catch (error) {
-              showToast('Error cancelling ride', 'error');
+              showToast('Error completing ride', 'error');
             } finally {
               setLoading(false);
             }
@@ -166,19 +147,33 @@ const RideTrackerScreen = () => {
     );
   };
 
-  const handleCallDriver = () => {
-    // TODO: Implement actual phone call functionality
-    showToast('Calling driver...', 'info');
+  const startProgressSimulation = () => {
+    const timer = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 100) {
+          clearInterval(timer);
+          return 100;
+        }
+        return prev + 2;
+      });
+    }, 2000);
+
+    return () => clearInterval(timer);
   };
 
-  const handleMessageDriver = () => {
-    showToast('Opening chat with driver...', 'info');
+  const handleCallPassenger = () => {
+    // TODO: Implement actual phone call functionality
+    showToast('Calling passenger...', 'info');
+  };
+
+  const handleMessagePassenger = () => {
+    showToast('Opening chat with passenger...', 'info');
   };
 
   const getStatusText = () => {
     switch (rideStatus) {
       case 'accepted':
-        return 'Driver is on the way';
+        return 'Heading to passenger';
       case 'in-progress':
         return 'Ride in progress';
       case 'completed':
@@ -217,31 +212,31 @@ const RideTrackerScreen = () => {
           style={styles.map}
           provider={PROVIDER_GOOGLE}
           initialRegion={{
-            latitude: driverLocation?.lat || 27.7156,
-            longitude: driverLocation?.lng || 85.3145,
-            latitudeDelta: 0.015,
-            longitudeDelta: 0.0121,
+            latitude: currentLocation?.lat || 27.7156,
+            longitude: currentLocation?.lng || 85.3145,
+            latitudeDelta: 0.0922,
+            longitudeDelta: 0.0421,
           }}
         >
           <Marker
             coordinate={{
-              latitude: driverLocation?.lat || 27.7156,
-              longitude: driverLocation?.lng || 85.3145,
+              latitude: currentLocation?.lat || 27.7156,
+              longitude: currentLocation?.lng || 85.3145,
             }}
-            title="Driver"
-            description="Your driver"
+            title="Your Location"
+            description="Your current location"
           >
             <View style={styles.driverMarker}>
-              <MaterialIcons name="directions-car" size={20} color="#FF9800" />
+              <MaterialIcons name="directions-car" size={20} color="#075B5E" />
             </View>
           </Marker>
           <Marker
             coordinate={{
-              latitude: 27.7172,
-              longitude: 85.324,
+              latitude: passengerLocation?.lat || 27.7172,
+              longitude: passengerLocation?.lng || 85.324,
             }}
-            title="Passenger"
-            description="Your location"
+            title="Passenger Location"
+            description="Passenger's current location"
           >
             <View style={styles.passengerMarker}>
               <MaterialIcons name="location-on" size={20} color="#4CAF50" />
@@ -292,39 +287,47 @@ const RideTrackerScreen = () => {
           </View>
         </View>
 
-        <View style={styles.driverInfo}>
-          <Animated.View style={[styles.driverAvatar, { transform: [{ scale: pulseAnimation }] }]}>
+        <View style={styles.passengerInfo}>
+          <Animated.View style={[styles.passengerAvatar, { transform: [{ scale: pulseAnimation }] }]}>
             <MaterialIcons name="person" size={24} color="#075B5E" />
           </Animated.View>
-          <View style={styles.driverDetails}>
-            <Text style={styles.driverName}>{driverName}</Text>
-            <Text style={styles.driverStatus}>Your driver</Text>
+          <View style={styles.passengerDetails}>
+            <Text style={styles.passengerName}>{passengerName}</Text>
+            <Text style={styles.passengerStatus}>Your passenger</Text>
           </View>
-          <View style={styles.driverActions}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleCallDriver}>
+          <View style={styles.passengerActions}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleCallPassenger}>
               <MaterialIcons name="phone" size={20} color="#075B5E" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton} onPress={handleMessageDriver}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleMessagePassenger}>
               <MaterialIcons name="message" size={20} color="#075B5E" />
             </TouchableOpacity>
           </View>
         </View>
 
-        {estimatedArrival && (
-          <View style={styles.etaContainer}>
-            <MaterialIcons name="access-time" size={16} color="#666" />
-            <Text style={styles.etaText}>Estimated arrival: {estimatedArrival}</Text>
-          </View>
-        )}
-
-        <TouchableOpacity
-          style={[styles.cancelButton, loading && styles.buttonDisabled]}
-          onPress={handleCancelRide}
-          disabled={loading}
-        >
-          <MaterialIcons name="close" size={20} color="#EA2F14" />
-          <Text style={styles.cancelButtonText}>Cancel Ride</Text>
-        </TouchableOpacity>
+        <View style={styles.rideActions}>
+          {rideStatus === 'accepted' && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.startButton]}
+              onPress={handleStartRide}
+              disabled={loading}
+            >
+              <MaterialIcons name="play-arrow" size={20} color="#fff" />
+              <Text style={styles.startButtonText}>Start Ride</Text>
+            </TouchableOpacity>
+          )}
+          
+          {rideStatus === 'in-progress' && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.completeButton]}
+              onPress={handleCompleteRide}
+              disabled={loading}
+            >
+              <MaterialIcons name="check-circle" size={20} color="#fff" />
+              <Text style={styles.completeButtonText}>Complete Ride</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <Toast
@@ -438,12 +441,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#075B5E',
   },
-  driverInfo: {
+  passengerInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  driverAvatar: {
+  passengerAvatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
@@ -452,20 +455,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  driverDetails: {
+  passengerDetails: {
     flex: 1,
   },
-  driverName: {
+  passengerName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
     marginBottom: 2,
   },
-  driverStatus: {
+  passengerStatus: {
     fontSize: 14,
     color: '#666',
   },
-  driverActions: {
+  passengerActions: {
     flexDirection: 'row',
     gap: 8,
   },
@@ -479,37 +482,36 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e9ecef',
   },
-  etaContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
+  rideActions: {
+    marginTop: 10,
   },
-  etaText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 8,
-  },
-  cancelButton: {
+  startButton: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#EA2F14',
-    paddingVertical: 12,
+    width: '100%',
+    height: 48,
     borderRadius: 8,
   },
-  cancelButtonText: {
-    color: '#EA2F14',
+  startButtonText: {
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  completeButton: {
+    backgroundColor: '#2196F3',
+    borderColor: '#2196F3',
+    flexDirection: 'row',
+    width: '100%',
+    height: 48,
+    borderRadius: 8,
+  },
+  completeButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   driverMarker: {
     width: 40,
@@ -529,4 +531,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default RideTrackerScreen;
+export default DriverRideTrackerScreen; 

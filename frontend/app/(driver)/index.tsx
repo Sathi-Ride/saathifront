@@ -1,13 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, StatusBar, Dimensions, SafeAreaView, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  StatusBar,
+  Dimensions,
+  SafeAreaView,
+  Alert,
+} from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
 import { Clock, BrushCleaning, Star, CarFront } from 'lucide-react-native';
 import SidePanel from '../(common)/sidepanel';
+import Toast from '../../components/ui/Toast';
 import apiClient from '../utils/apiClient';
 
 const { width, height } = Dimensions.get('window');
 
-const HomeScreen = () => {
+const DriverHomeScreen = () => {
   const router = useRouter();
   const { isAccountRestored: initialRestored, registrationComplete } = useLocalSearchParams();
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
@@ -16,8 +27,26 @@ const HomeScreen = () => {
   const [isAccountRestored, setIsAccountRestored] = useState(false);
   const [vehicleDetails, setVehicleDetails] = useState({ type: '', licensePlate: '', model: '' });
   const [passengerRatings, setPassengerRatings] = useState({ averageRating: 0, totalReviews: 0 });
-  const [recentRide, setRecentRide] = useState({ from: '', to: '', date: '', fare: '' });
   const [loading, setLoading] = useState(true);
+  const [recentRide, setRecentRide] = useState({ from: '', to: '', date: '', fare: '' });
+  
+  const [toast, setToast] = useState<{
+    visible: boolean;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    setToast({ visible: true, message, type });
+  };
+
+  const hideToast = () => {
+    setToast(prev => ({ ...prev, visible: false }));
+  };
 
   useEffect(() => {
     if (initialRestored === 'true' || registrationComplete === 'true') {
@@ -34,27 +63,28 @@ const HomeScreen = () => {
       const response = await apiClient.get('driver-profile');
       if (response.data.data) {
         const profile = response.data.data;
+        
         setVehicleDetails({
-          type: profile.vehicleType?.name || '',
-          licensePlate: profile.vehicleRegNum || '',
-          model: profile.vehicleModel || '',
+          type: profile.vehicleMake || 'Not specified',
+          licensePlate: profile.vehicleRegNum || profile.licensePlate || 'Not specified',
+          model: profile.vehicleModel || profile.model || 'Not specified',
         });
         setPassengerRatings({
           averageRating: profile.rating || 0,
           totalReviews: profile.totalRides || 0,
         });
         setRecentRide({
-          from: profile.lastRide?.pickupLocation || 'Pickup Location',
-          to: profile.lastRide?.dropoffLocation || 'Destination',
-          date: profile.lastRide?.date ? new Date(profile.lastRide.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-          fare: profile.lastRide?.fare ? `₹${profile.lastRide.fare}` : '₹500',
+          from: profile.lastRide?.pickupLocation || 'No recent rides',
+          to: profile.lastRide?.dropoffLocation || 'No recent rides',
+          date: profile.lastRide?.date ? new Date(profile.lastRide.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'No recent rides',
+          fare: profile.lastRide?.fare ? `₹${profile.lastRide.fare}` : 'No recent rides',
         });
       } else {
         setIsAccountRestored(false); // Reset if no profile exists
       }
     } catch (err) {
       setIsAccountRestored(false); // Assume no profile on error
-      Alert.alert('Error', 'Failed to load profile data.');
+      showToast('Failed to load profile data', 'error');
     } finally {
       setLoading(false);
     }
@@ -71,9 +101,81 @@ const HomeScreen = () => {
   const handleDriverPress = () => router.push('/registerVehicle');
   const handleAccountPress = () => router.push('/accountRestoration');
   const handlePassengerMode = () => router.push('/(tabs)');
+  const handleDriverSection = () => router.push('/driverSection');
 
-  if (loading) return <Text>Loading...</Text>;
+  if (loading) return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    </SafeAreaView>
+  );
 
+  // Show driver mode (online/offline) only after registration is complete
+  if (isAccountRestored) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.hamburgerButton} onPress={openSidePanel}>
+            <View style={styles.hamburgerLine} />
+            <View style={styles.hamburgerLine} />
+            <View style={styles.hamburgerLine} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.content}>
+          <View style={styles.incomeCard}>
+            <Text style={styles.incomeTitle}>
+              {'Welcome to Saathi! 🎉'}
+            </Text>
+              <>
+                <Text style={styles.welcomeText}>You can now start accepting rides and earning money.</Text>
+              </>
+          </View>
+
+          <View style={styles.vehicleDetailsCard}>
+            <Text style={styles.sectionTitle}>Vehicle Details</Text>
+            <Text style={styles.detailText}>Type: {vehicleDetails.type}</Text>
+            <Text style={styles.detailText}>License Plate: {vehicleDetails.licensePlate}</Text>
+            <Text style={styles.detailText}>Model: {vehicleDetails.model}</Text>
+          </View>
+
+          <View style={styles.ratingsCard}>
+            <Text style={styles.sectionTitle}>Passenger Ratings</Text>
+            <Text style={styles.detailText}>Average Rating: {passengerRatings.averageRating} / 5</Text>
+            <Text style={styles.detailText}>Total Reviews: {passengerRatings.totalReviews}</Text>
+          </View>
+
+
+          {/* Driver Section Button */}
+          <TouchableOpacity style={styles.driverSectionButton} onPress={handleDriverSection}>
+            <View style={styles.driverSectionContent}>
+              <MaterialIcons name="directions-car" size={24} color="#fff" />
+              <Text style={styles.driverSectionText}>Driver Section</Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+
+        <SidePanel
+          visible={sidePanelVisible}
+          onClose={closeSidePanel}
+          role={role}
+          rideInProgress={rideInProgress}
+          onChangeRole={handleChangeRole}
+        />
+
+        <Toast
+          visible={toast.visible}
+          message={toast.message}
+          type={toast.type}
+          onHide={hideToast}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  // Show registration options if not registered
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
@@ -86,72 +188,36 @@ const HomeScreen = () => {
       </View>
       <View style={styles.content}>
         <View style={styles.incomeCard}>
-          <Text style={styles.incomeTitle}>
-            {registrationComplete === 'true' ? 'Welcome to Saathi! 🎉' : 'Tips for drivers'}
-          </Text>
-          {registrationComplete === 'true' ? (
-            <>
-              <Text style={styles.welcomeText}>Your driver profile has been created successfully!</Text>
-              <Text style={styles.welcomeText}>You can now start accepting rides and earning money.</Text>
-            </>
-          ) : (
-            <>
-              <View style={styles.benefitItem}>
-                <Clock size={20} color="#333" />
-                <Text style={styles.benefitText}>Peak hours are 8-10 AM and 6-8 PM</Text>
-              </View>
-              <View style={styles.benefitItem}>
-                <BrushCleaning size={20} color="#333" />
-                <Text style={styles.benefitText}>Keep your vehicle clean</Text>
-              </View>
-              <View style={styles.benefitItem}>
-                <Star size={20} color="#333" />
-                <Text style={styles.benefitText}>Maintain good ratings</Text>
-              </View>
-            </>
-          )}
+          <Text style={styles.incomeTitle}>Tips for drivers</Text>
+          <View style={styles.benefitItem}>
+            <Clock size={20} color="#333" />
+            <Text style={styles.benefitText}>Peak hours are 8-10 AM and 6-8 PM</Text>
+          </View>
+          <View style={styles.benefitItem}>
+            <BrushCleaning size={20} color="#333" />
+            <Text style={styles.benefitText}>Keep your vehicle clean</Text>
+          </View>
+          <View style={styles.benefitItem}>
+            <Star size={20} color="#333" />
+            <Text style={styles.benefitText}>Maintain good ratings</Text>
+          </View>
         </View>
-        {!isAccountRestored ? (
-          <>
-            <TouchableOpacity style={styles.driverButton} onPress={handleDriverPress}>
-              <View style={styles.driverContent}>
-                <View style={styles.carIcon}>
-                  <CarFront size={24} color="#333" />
-                </View>
-                <Text style={styles.driverText}>Driver</Text>
-              </View>
-            </TouchableOpacity>
-            <View style={styles.bottomSection}>
-              <TouchableOpacity style={styles.accountButton} onPress={handleAccountPress}>
-                <Text style={styles.accountText}>I already have an account</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handlePassengerMode}>
-                <Text style={styles.passengerText}>Go to passenger mode</Text>
-              </TouchableOpacity>
+        <TouchableOpacity style={styles.driverButton} onPress={handleDriverPress}>
+          <View style={styles.driverContent}>
+            <View style={styles.carIcon}>
+              <CarFront size={24} color="#333" />
             </View>
-          </>
-        ) : (
-          <>
-            <View style={styles.vehicleDetailsCard}>
-              <Text style={styles.sectionTitle}>Vehicle Details</Text>
-              <Text style={styles.detailText}>Type: {vehicleDetails.type}</Text>
-              <Text style={styles.detailText}>License Plate: {vehicleDetails.licensePlate}</Text>
-              <Text style={styles.detailText}>Model: {vehicleDetails.model}</Text>
-            </View>
-            <View style={styles.ratingsCard}>
-              <Text style={styles.sectionTitle}>Passenger Ratings</Text>
-              <Text style={styles.detailText}>Average Rating: {passengerRatings.averageRating} / 5</Text>
-              <Text style={styles.detailText}>Total Reviews: {passengerRatings.totalReviews}</Text>
-            </View>
-            <View style={styles.recentRideCard}>
-              <Text style={styles.sectionTitle}>Recent Ride</Text>
-              <Text style={styles.detailText}>From: {recentRide.from}</Text>
-              <Text style={styles.detailText}>To: {recentRide.to}</Text>
-              <Text style={styles.detailText}>Date: {recentRide.date}</Text>
-              <Text style={styles.detailText}>Fare: {recentRide.fare}</Text>
-            </View>
-          </>
-        )}
+            <Text style={styles.driverText}>Driver</Text>
+          </View>
+        </TouchableOpacity>
+        <View style={styles.bottomSection}>
+          <TouchableOpacity style={styles.accountButton} onPress={handleAccountPress}>
+            <Text style={styles.accountText}>I already have an account</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handlePassengerMode}>
+            <Text style={styles.passengerText}>Go to passenger mode</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       <SidePanel
         visible={sidePanelVisible}
@@ -296,6 +362,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 20,
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -321,6 +388,42 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 8,
   },
+  driverSectionButton: {
+    backgroundColor: '#075B5E',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  driverSectionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  driverSectionText: {
+    fontSize: 18,
+    color: '#fff',
+    fontWeight: '600',
+    marginLeft: 12,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+  },
 });
 
-export default HomeScreen;
+export default DriverHomeScreen;

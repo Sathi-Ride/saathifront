@@ -4,14 +4,20 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { DriverRegistrationProvider } from './DriverRegistrationContext';
+import { initializeApiClient } from './utils/apiClient';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
+
+  useEffect(() => {
+    // Initialize API client with stored token
+    initializeApiClient();
+  }, []);
 
   if (!loaded) {
     return null;

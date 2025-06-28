@@ -9,12 +9,19 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app needs access to location to show your current position on the map and find nearby rides.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to location to track your position for ride sharing."
+      },
+      "config": {
+        "googleMapsApiKey": "AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg"
+      }
     },
     "android": {
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyBoUiBAMyXp21xAiyZ2r6xZEDd9HbzeFJg"
+          "apiKey": "AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg"
         }
       },
       "adaptiveIcon": {
@@ -22,7 +29,11 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.prameshk7.frontend"
+      "package": "com.prameshk7.frontend",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -38,6 +49,12 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to show your position on the map and find nearby rides."
         }
       ]
     ],

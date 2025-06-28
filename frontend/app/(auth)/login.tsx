@@ -8,12 +8,10 @@ const LoginScreen = () => {
   const router = useRouter();
 
   const handlePLogin = () => {
-    console.log('Login pressed');
     router.push('/(auth)/phoneLogin'); 
   };
 
   const handleGLogin = () => {
-    console.log('Google login pressed');
     router.push('/(auth)/setup?source=google');
   };
 

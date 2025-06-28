@@ -14,6 +14,7 @@ import {
 } from "react-native"
 import Icon from "react-native-vector-icons/MaterialIcons"
 import { useRouter, useLocalSearchParams } from "expo-router"
+import Toast from "../../components/ui/Toast"
 
 const { width, height } = Dimensions.get("window")
 
@@ -39,6 +40,23 @@ const DriverSelectionScreen = () => {
   const [bargainMessage, setBargainMessage] = useState("")
   const [driverResponse, setDriverResponse] = useState<{ fare: number; message: string } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [toast, setToast] = useState<{
+    visible: boolean;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    setToast({ visible: true, message, type });
+  };
+
+  const hideToast = () => {
+    setToast(prev => ({ ...prev, visible: false }));
+  };
 
   useEffect(() => {
     // Dummy driver data (replace with API call later)
@@ -84,6 +102,7 @@ const DriverSelectionScreen = () => {
     }
     setBargainMessage("")
     setDriverResponse(null)
+    showToast(`Started negotiation with ${driver.name}`, 'info');
   }
 
   const adjustFare = (increase: boolean) => {
@@ -99,12 +118,13 @@ const DriverSelectionScreen = () => {
 
   const sendBargain = () => {
     if (!bargainMessage.trim()) {
-      alert("Please enter a message")
+      showToast('Please enter a message', 'error');
       return
     }
     setLoading(true)
+    showToast('Sending offer to driver...', 'info');
+    
     // Simulate API call to send user's bargain to driver
-    console.log(`Sending to driver: Fare: ${bargainFare.toFixed(2)}, Message: ${bargainMessage}`)
     setTimeout(() => {
       setLoading(false)
       // Dummy driver response
@@ -118,12 +138,13 @@ const DriverSelectionScreen = () => {
       ]
       const driverMessage = responses[Math.floor(Math.random() * responses.length)]
       setDriverResponse({ fare: driverNewFare, message: driverMessage })
+      showToast('Driver responded!', 'success');
     }, 2000)
   }
 
   const confirmBargain = () => {
     if (!driverResponse) {
-      alert("Please wait for driver response or adjust fare")
+      showToast('Please wait for driver response or adjust fare', 'error');
       return
     }
     const finalFare = driverResponse.fare
@@ -131,10 +152,13 @@ const DriverSelectionScreen = () => {
       setSelectedDriver({ ...bargainingDriver, baseFare: finalFare })
       setBargainingDriver(null)
       setDriverResponse(null)
-      router.push({
-        pathname: "/rideTracker",
-        params: { driverName: bargainingDriver.name, from, to, fare: finalFare.toFixed(2), vehicle },
-      })
+      showToast('Ride confirmed!', 'success');
+      setTimeout(() => {
+        router.push({
+          pathname: "/rideTracker",
+          params: { driverName: bargainingDriver.name, from, to, fare: finalFare.toFixed(2), vehicle },
+        })
+      }, 1500);
     }
   }
 
@@ -142,6 +166,7 @@ const DriverSelectionScreen = () => {
     setBargainingDriver(null)
     setDriverResponse(null)
     setBargainMessage("")
+    showToast('Negotiation cancelled', 'info');
   }
 
   const renderDriverItem = ({ item }: { item: Driver }) => (
@@ -281,6 +306,14 @@ const DriverSelectionScreen = () => {
             )}
           </View>
         </View>
+
+        <Toast
+          visible={toast.visible}
+          message={toast.message}
+          type={toast.type}
+          onHide={hideToast}
+          duration={4000}
+        />
       </SafeAreaView>
     )
   }
@@ -319,8 +352,16 @@ const DriverSelectionScreen = () => {
           </View>
         </View>
         <View style={styles.tripVehicleInfo}>
-          <Icon name={vehicle === "Moto" ? "motorcycle" : "directions-car"} size={20} color="#075B5E" />
-          <Text style={styles.vehicleText}>{vehicle}</Text>
+          <Icon 
+            name={
+              (Array.isArray(vehicle) ? vehicle[0] : vehicle)?.toLowerCase().includes('bike')
+                ? "motorcycle" 
+                : "directions-car"
+            } 
+            size={20} 
+            color="#075B5E" 
+          />
+          <Text style={styles.vehicleText}>{Array.isArray(vehicle) ? vehicle[0] : vehicle}</Text>
         </View>
       </View>
 
@@ -342,6 +383,14 @@ const DriverSelectionScreen = () => {
           </TouchableOpacity>
         </View>
       )}
+
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={hideToast}
+        duration={4000}
+      />
     </SafeAreaView>
   )
 }

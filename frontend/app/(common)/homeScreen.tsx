@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from "react"
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native"
-import { WebView } from "react-native-webview"
 import { useRouter } from "expo-router"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { StatusBar } from "expo-status-bar"
 import SidePanel from "./sidepanel"
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps'
+import { MaterialIcons } from '@expo/vector-icons'
 
 export default function HomeScreen() {
   const router = useRouter()
@@ -73,47 +74,6 @@ export default function HomeScreen() {
     }
   }
 
-  // Mock map HTML with current location
-  const mapHtml = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Current Location</title>
-        <meta name="viewport" content="initial-scale=1.0, width=device-width">
-        <style>
-          #map { width: 100%; height: 100%; }
-          html, body { margin: 0; padding: 0; height: 100%; }
-          .leaflet-control-container { display: none; }
-        </style>
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-      </head>
-      <body>
-        <div id="map"></div>
-        <script>
-          var map = L.map('map', {
-            zoomControl: false,
-            attributionControl: false
-          }).setView([${location?.coords.latitude || 27.7172}, ${location?.coords.longitude || 85.324}], 13);
-          
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-          }).addTo(map);
-          
-          var userIcon = L.divIcon({
-            html: '<div style="background: #4CAF50; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
-            iconSize: [20, 20],
-            className: 'custom-marker'
-          });
-          
-          L.marker([${location?.coords.latitude || 27.7172}, ${location?.coords.longitude || 85.324}], {icon: userIcon})
-            .addTo(map)
-            .bindPopup('Your Location');
-        </script>
-      </body>
-    </html>
-  `
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
@@ -125,14 +85,28 @@ export default function HomeScreen() {
           <View style={styles.hamburgerLine} />
         </TouchableOpacity>
 
-        <WebView
+        <MapView
           style={styles.map}
-          originWhitelist={["*"]}
-          source={{ html: mapHtml }}
-          scrollEnabled={false}
-          showsHorizontalScrollIndicator={false}
-          showsVerticalScrollIndicator={false}
-        />
+          provider={PROVIDER_GOOGLE}
+          initialRegion={{
+            latitude: location?.coords.latitude || 27.7172,
+            longitude: location?.coords.longitude || 85.324,
+            latitudeDelta: 0.0922,
+            longitudeDelta: 0.0421,
+          }}
+        >
+          <Marker
+            coordinate={{
+              latitude: location?.coords.latitude || 27.7172,
+              longitude: location?.coords.longitude || 85.324,
+            }}
+            title="Your Location"
+          >
+            <View style={styles.userMarker}>
+              <MaterialIcons name="location-on" size={20} color="#4CAF50" />
+            </View>
+          </Marker>
+        </MapView>
       </View>
 
       {/* Welcome Message */}
@@ -236,5 +210,13 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  userMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
   },
 })

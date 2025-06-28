@@ -8,6 +8,8 @@ export default function DriverLayout() {
       <Stack.Screen name="registerVehicle" options={{ headerShown: false }} />
       <Stack.Screen name="accountRestoration" options={{ headerShown: false }} />
       <Stack.Screen name="registration" options={{ headerShown: false }} />
+      <Stack.Screen name="rideTracker" options={{ headerShown: false }} />
+      <Stack.Screen name="driverSection" options={{ headerShown: false }} />
     </Stack>
     );
 }

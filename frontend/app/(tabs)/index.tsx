@@ -2,11 +2,16 @@
 
 import { useState, useEffect } from "react"
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ActivityIndicator, StatusBar } from "react-native"
-import { WebView } from "react-native-webview"
 import { TextInput } from "react-native-paper"
 import Icon from "react-native-vector-icons/MaterialIcons"
 import { useRouter, useLocalSearchParams } from "expo-router"
 import SidePanel from "../(common)/sidepanel"
+import Toast from "../../components/ui/Toast"
+import LocationSearch from "../../components/LocationSearch"
+import { locationService, LocationData, GoogleMapsPlace } from "../utils/locationService"
+import { rideService, VehicleType, RideRequest } from "../utils/rideService"
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps'
+import MaterialIcons from "react-native-vector-icons/MaterialIcons"
 
 const { width, height } = Dimensions.get("window")
 
@@ -14,17 +19,245 @@ const PassengerHomeScreen = () => {
   const { rideInProgress, driverName, from, to, fare, vehicle, progress: initialProgress } = useLocalSearchParams()
   const getString = (val: string | string[] | undefined) => (Array.isArray(val) ? (val[0] ?? "") : (val ?? ""))
 
-  // Local state - no backend dependencies
-  const [localFrom, setFrom] = useState<string>(getString(from))
-  const [localTo, setTo] = useState<string>(getString(to))
-  const [localFare, setFare] = useState<string>(getString(fare))
+  // Real state management
+  const [currentLocation, setCurrentLocation] = useState<LocationData | null>(null)
+  const [pickupLocation, setPickupLocation] = useState<string>(getString(from))
+  const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>(null)
+  const [destinationLocation, setDestinationLocation] = useState<string>(getString(to))
+  const [destinationCoords, setDestinationCoords] = useState<{ lat: number; lng: number } | null>(null)
+  const [offerPrice, setOfferPrice] = useState<string>(getString(fare))
   const [loading, setLoading] = useState(false)
-  const [selectedVehicle, setSelectedVehicle] = useState(getString(vehicle) || "Moto")
+  const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([])
+  const [selectedVehicleType, setSelectedVehicleType] = useState<VehicleType | null>(null)
   const [sidePanelVisible, setSidePanelVisible] = useState(false)
   const router = useRouter()
   const [localRideInProgress, setLocalRideInProgress] = useState(rideInProgress === "true")
   const [progress, setProgress] = useState(Number.parseInt(initialProgress as string) || 0)
   const [localDriverName, setLocalDriverName] = useState(getString(driverName) || "")
+  const [toast, setToast] = useState<{
+    visible: boolean;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    setToast({ visible: true, message, type });
+  };
+
+  const hideToast = () => {
+    setToast(prev => ({ ...prev, visible: false }));
+  };
+
+  // Initialize location and vehicle types
+  useEffect(() => {
+    initializeApp();
+  }, []);
+
+  const initializeApp = async () => {
+    try {
+      // Get current location
+      const location = await locationService.getCurrentLocation();
+      setCurrentLocation(location);
+
+      // Get vehicle types from API
+      const types = await rideService.getVehicleTypes();
+      setVehicleTypes(types);
+      
+      if (types.length > 0) {
+        setSelectedVehicleType(types[0]); // Set first vehicle type as default
+      }
+
+      // Start location tracking
+      await locationService.startLocationTracking((newLocation) => {
+        setCurrentLocation(newLocation);
+      });
+
+    } catch (error) {
+      showToast('Error initializing app', 'error');
+    }
+  };
+
+  // Handle pickup location selection
+  const handlePickupLocationSelect = (place: GoogleMapsPlace) => {
+    setPickupLocation(place.name);
+    // Use actual coordinates from the place data
+    if (place.location) {
+      setPickupCoords({ lat: place.location.lat, lng: place.location.lng });
+    } else {
+      // Fallback coordinates
+      setPickupCoords({ lat: 27.7172, lng: 85.324 });
+    }
+  };
+
+  // Handle destination location selection
+  const handleDestinationLocationSelect = (place: GoogleMapsPlace) => {
+    setDestinationLocation(place.name);
+    // Use actual coordinates from the place data
+    if (place.location) {
+      setDestinationCoords({ lat: place.location.lat, lng: place.location.lng });
+    } else {
+      // Fallback coordinates
+      setDestinationCoords({ lat: 27.7089, lng: 85.3206 });
+    }
+  };
+
+  // Calculate estimated fare
+  const calculateEstimatedFare = async () => {
+    if (!pickupLocation || !destinationLocation || !selectedVehicleType) {
+      console.log('Missing required data for fare calculation:', {
+        pickupLocation,
+        destinationLocation,
+        selectedVehicleType: selectedVehicleType?.name
+      });
+      return;
+    }
+
+    try {
+      console.log('Calculating fare with:', {
+        pickupLocation,
+        destinationLocation,
+        pickupCoords,
+        destinationCoords,
+        vehicleType: selectedVehicleType.name
+      });
+
+      const distanceData = await locationService.calculateDistance(
+        pickupLocation, 
+        destinationLocation,
+        pickupCoords || undefined,
+        destinationCoords || undefined
+      );
+      
+      console.log('Distance calculation result:', distanceData);
+      
+      if (distanceData) {
+        console.log('Vehicle type for fare calculation:', selectedVehicleType);
+        console.log('Distance for fare calculation:', distanceData.distance.value / 1000);
+        
+        const estimatedFare = rideService.calculateEstimatedFare(
+          distanceData.distance.value / 1000, // Convert to km
+          selectedVehicleType
+        );
+        console.log('Estimated fare calculated:', estimatedFare);
+        setOfferPrice(estimatedFare.toString());
+      } else {
+        console.log('No distance data returned');
+      }
+    } catch (error) {
+      console.error('Error calculating fare:', error);
+    }
+  };
+
+  // Create ride request
+  const handleCreateRide = async () => {
+    if (!pickupLocation.trim()) {
+      showToast('Please select pickup location', 'error');
+      return;
+    }
+
+    if (!destinationLocation.trim()) {
+      showToast('Please select destination', 'error');
+      return;
+    }
+
+    if (!selectedVehicleType) {
+      showToast('Please select a vehicle type', 'error');
+      return;
+    }
+
+    if (!pickupCoords || !destinationCoords) {
+      showToast('Please select valid locations', 'error');
+      return;
+    }
+
+    if (!offerPrice || parseFloat(offerPrice) <= 0) {
+      showToast('Please enter a valid offer price', 'error');
+      return;
+    }
+
+    setLoading(true);
+    showToast('Creating ride request...', 'info');
+
+    try {
+      // Ensure coordinates are valid numbers
+      const pickUpLat = Number(pickupCoords.lat);
+      const pickUpLng = Number(pickupCoords.lng);
+      const dropOffLat = Number(destinationCoords.lat);
+      const dropOffLng = Number(destinationCoords.lng);
+
+      // Validate coordinates
+      if (isNaN(pickUpLat) || isNaN(pickUpLng) || isNaN(dropOffLat) || isNaN(dropOffLng)) {
+        showToast('Invalid coordinates. Please select valid locations.', 'error');
+        return;
+      }
+
+      if (pickUpLat < -90 || pickUpLat > 90 || dropOffLat < -90 || dropOffLat > 90) {
+        showToast('Invalid latitude values. Must be between -90 and 90.', 'error');
+        return;
+      }
+
+      if (pickUpLng < -180 || pickUpLng > 180 || dropOffLng < -180 || dropOffLng > 180) {
+        showToast('Invalid longitude values. Must be between -180 and 180.', 'error');
+        return;
+      }
+
+      const rideData: RideRequest = {
+        vehicleType: selectedVehicleType._id,
+        pickUpLocation: pickupLocation,
+        pickUpLat: pickUpLat,
+        pickUpLng: pickUpLng,
+        dropOffLocation: destinationLocation,
+        dropOffLat: dropOffLat,
+        dropOffLng: dropOffLng,
+        offerPrice: parseFloat(offerPrice),
+      };
+
+      console.log('Creating ride with data:', {
+        vehicleType: rideData.vehicleType,
+        pickUpLocation: rideData.pickUpLocation,
+        pickUpLat: rideData.pickUpLat,
+        pickUpLng: rideData.pickUpLng,
+        dropOffLocation: rideData.dropOffLocation,
+        dropOffLat: rideData.dropOffLat,
+        dropOffLng: rideData.dropOffLng,
+        offerPrice: rideData.offerPrice,
+        pickupCoordsType: typeof pickupCoords.lat,
+        destinationCoordsType: typeof destinationCoords.lat,
+      });
+
+      const ride = await rideService.createRide(rideData);
+      
+      if (ride) {
+        showToast('Ride request created successfully!', 'success');
+        setTimeout(() => {
+          router.push({
+            pathname: "/(tabs)/rideOffers",
+            params: { 
+              rideId: ride._id,
+              from: pickupLocation,
+              to: destinationLocation,
+              fare: offerPrice,
+              vehicle: selectedVehicleType.name,
+            },
+          });
+        }, 1500);
+      } else {
+        showToast('Failed to create ride request', 'error');
+      }
+    } catch (error: any) {
+      let errorMessage = 'Failed to create ride request';
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+      showToast(errorMessage, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Mock ride progress simulation - replace with real API calls later
   useEffect(() => {
@@ -39,10 +272,10 @@ const PassengerHomeScreen = () => {
                 pathname: "/rideRate",
                 params: {
                   driverName: localDriverName,
-                  from: localFrom,
-                  to: localTo,
-                  fare: localFare,
-                  vehicle: selectedVehicle,
+                  from: pickupLocation,
+                  to: destinationLocation,
+                  fare: offerPrice,
+                  vehicle: selectedVehicleType?.name || 'Ride',
                 },
               })
             }, 1000)
@@ -55,116 +288,21 @@ const PassengerHomeScreen = () => {
     return () => clearInterval(timer)
   }, [localRideInProgress, progress])
 
-  // Mock driver search - replace with API call later
-  const handleFindDriver = async () => {
-    if (!localFrom || !localTo) {
-      alert("Please enter From and To locations")
-      return
-    }
-
-    setLoading(true)
-
-    // TODO: Replace with actual API call
-    // const response = await fetch('/api/find-driver', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     from: localFrom,
-    //     to: localTo,
-    //     vehicle: selectedVehicle,
-    //     fare: localFare
-    //   })
-    // });
-    // const data = await response.json();
-
-    // Mock API delay
-    setTimeout(() => {
-      setLoading(false)
-      // Mock fare calculation
-      const mockDistance = Math.random() * 10 + 2 // 2-12 km
-      const baseFare = mockDistance * (selectedVehicle === "Moto" ? 15 : 25)
-      const adjustedFare = baseFare * (1 + (Math.random() * 0.2 - 0.1)) // ±10% variation
-
-      router.push({
-        pathname: "/driverSelect",
-        params: {
-          from: localFrom,
-          to: localTo,
-          fare: localFare || adjustedFare.toFixed(2),
-          vehicle: selectedVehicle,
-        },
-      })
-    }, 2000)
-  }
-
-  const selectVehicle = (vehicle: string) => {
-    setSelectedVehicle(vehicle)
-  }
-
   const handleRoleChange = (newRole: "driver" | "passenger") => {
     if (newRole === "driver") {
       router.push("/(driver)")
     }
   }
 
-  // Mock location data - replace with real GPS coordinates later
-  const demoLocation = {
-    latitude: 27.7172,
-    longitude: 85.324,
-    zoom: 13,
-  }
-
-  const mapHtml = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Ride Map</title>
-        <meta name="viewport" content="initial-scale=1.0, width=device-width">
-        <style>
-          #map { width: 100%; height: 100%; }
-          html, body { margin: 0; padding: 0; height: 100%; }
-          .leaflet-control-container { display: none; }
-        </style>
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-      </head>
-      <body>
-        <div id="map"></div>
-        <script>
-          var map = L.map('map', {
-            zoomControl: false,
-            attributionControl: false
-          }).setView([${demoLocation.latitude}, ${demoLocation.longitude}], ${demoLocation.zoom});
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-          }).addTo(map);
-          var pickupIcon = L.divIcon({
-            html: '<div style="background: #4CAF50; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
-            iconSize: [20, 20],
-            className: 'custom-marker'
-          });
-          L.marker([${demoLocation.latitude}, ${demoLocation.longitude}], {icon: pickupIcon}).addTo(map);
-          L.marker([27.7089, 85.3206]).addTo(map).bindPopup('Buddha Chowk');
-          L.marker([27.7156, 85.3145]).addTo(map).bindPopup('Gachhiya');
-        </script>
-      </body>
-    </html>
-  `
-
-  const vehicleOptions = [
-    { id: "Moto", name: "Moto", icon: "motorcycle", passengers: 1, color: "#4CAF50" },
-    { id: "Ride", name: "Ride", icon: "directions-car", passengers: 4, color: "#2196F3" },
-  ]
-
   const openRideTracking = () => {
     router.push({
       pathname: "/rideTracker",
       params: {
         driverName: localDriverName,
-        from: localFrom,
-        to: localTo,
-        fare: localFare,
-        vehicle: selectedVehicle,
+        from: pickupLocation,
+        to: destinationLocation,
+        fare: offerPrice,
+        vehicle: selectedVehicleType?.name || 'Ride',
         rideInProgress: localRideInProgress.toString(),
         progress: progress.toString(),
       },
@@ -182,71 +320,82 @@ const PassengerHomeScreen = () => {
           </TouchableOpacity>
         )}
 
-        <WebView
+        <MapView
           style={styles.map}
-          originWhitelist={["*"]}
-          source={{ html: mapHtml }}
-          scrollEnabled={false}
-          showsHorizontalScrollIndicator={false}
-          showsVerticalScrollIndicator={false}
-        />
+          provider={PROVIDER_GOOGLE}
+          initialRegion={{
+            latitude: currentLocation?.latitude || 27.7172,
+            longitude: currentLocation?.longitude || 85.324,
+            latitudeDelta: 0.015,
+            longitudeDelta: 0.0121,
+          }}
+        >
+          {currentLocation && (
+            <Marker
+              coordinate={{
+                latitude: currentLocation.latitude,
+                longitude: currentLocation.longitude,
+              }}
+              title="Your Location"
+              description="This is your current location"
+            >
+              <View style={styles.userMarker}>
+                <MaterialIcons name="location-on" size={20} color="#4CAF50" />
+              </View>
+            </Marker>
+          )}
+        </MapView>
       </View>
 
       <View style={styles.bottomSheet}>
         <View style={styles.vehicleContainer}>
-          {vehicleOptions.map((vehicle) => (
-            <TouchableOpacity
-              key={vehicle.id}
-              style={[styles.vehicleOption, selectedVehicle === vehicle.id && styles.selectedVehicle]}
-              onPress={() => selectVehicle(vehicle.id)}
-            >
-              <View style={styles.vehicleIconContainer}>
-                <Icon name={vehicle.icon} size={24} color={selectedVehicle === vehicle.id ? vehicle.color : "#666"} />
-                <View style={styles.passengerBadge}>
-                  <Icon name="person" size={12} color="#666" />
-                  <Text style={styles.passengerCount}>{vehicle.passengers}</Text>
-                </View>
-              </View>
-              <Text
-                style={[
-                  styles.vehicleName,
-                  selectedVehicle === vehicle.id && { color: vehicle.color, fontWeight: "600" },
-                ]}
+          {vehicleTypes.map((vehicleType) => {
+            const isMotorcycle = vehicleType.name.toLowerCase().includes('bike') ;
+            
+            return (
+              <TouchableOpacity
+                key={vehicleType.name}
+                style={[styles.vehicleOption, selectedVehicleType?._id === vehicleType._id && styles.selectedVehicle]}
+                onPress={() => setSelectedVehicleType(vehicleType)}
               >
-                {vehicle.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <View style={styles.vehicleIconContainer}>
+                  <Icon 
+                    name={isMotorcycle ? "motorcycle" : "directions-car"} 
+                    size={24} 
+                    color={selectedVehicleType?._id === vehicleType._id ? "#075B5E" : "#666"} 
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.vehicleName,
+                    selectedVehicleType?._id === vehicleType._id && { color: "#075B5E", fontWeight: "600" },
+                  ]}
+                >
+                  {vehicleType.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <View style={styles.inputSection}>
           <View style={styles.inputRow}>
-            <Icon name="search" size={20} color="#075B5E" style={styles.searchIcon} />
-            <TextInput
-              mode="flat"
-              value={localFrom}
-              onChangeText={setFrom}
+            <LocationSearch
               placeholder="From (Pickup Location)"
-              placeholderTextColor={"#ccc"}
-              style={styles.locationInput}
-              underlineColor="transparent"
-              activeUnderlineColor="transparent"
-              contentStyle={styles.inputContent}
+              value={pickupLocation}
+              onChangeText={setPickupLocation}
+              onLocationSelect={handlePickupLocationSelect}
+              iconColor="#075B5E"
             />
           </View>
 
           <View style={styles.inputRow}>
-            <Icon name="search" size={20} color="#EA2F14" style={styles.searchIcon} />
-            <TextInput
-              mode="flat"
+            <LocationSearch
               placeholder="To (Destination)"
-              placeholderTextColor={"#ccc"}
-              value={localTo}
-              onChangeText={setTo}
-              style={styles.locationInput}
-              underlineColor="transparent"
-              activeUnderlineColor="transparent"
-              contentStyle={styles.inputContent}
+              value={destinationLocation}
+              onChangeText={setDestinationLocation}
+              onLocationSelect={handleDestinationLocationSelect}
+              iconColor="#EA2F14"
             />
           </View>
 
@@ -256,20 +405,26 @@ const PassengerHomeScreen = () => {
               mode="flat"
               placeholder="Offer your fare"
               placeholderTextColor={"#ccc"}
-              value={localFare}
-              onChangeText={setFare}
+              value={offerPrice}
+              onChangeText={setOfferPrice}
               style={styles.fareInput}
               keyboardType="numeric"
               underlineColor="transparent"
               activeUnderlineColor="transparent"
               contentStyle={styles.inputContent}
             />
+            <TouchableOpacity 
+              style={styles.calculateButton}
+              onPress={calculateEstimatedFare}
+            >
+              <Text style={styles.calculateButtonText}>Calculate</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
         <TouchableOpacity
           style={[styles.findDriverButton, loading && styles.buttonDisabled]}
-          onPress={handleFindDriver}
+          onPress={handleCreateRide}
           disabled={loading}
         >
           <View style={styles.buttonContent}>
@@ -312,6 +467,13 @@ const PassengerHomeScreen = () => {
         role="passenger"
         rideInProgress={localRideInProgress}
         onChangeRole={handleRoleChange}
+      />
+
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={hideToast}
       />
     </View>
   )
@@ -513,6 +675,26 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#fff",
     borderRadius: 2,
+  },
+  calculateButton: {
+    backgroundColor: "#075B5E",
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+  },
+  calculateButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  userMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
   },
 })
 

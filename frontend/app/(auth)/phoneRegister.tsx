@@ -4,6 +4,7 @@ import { Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import apiClient from '../utils/apiClient';
+import Toast from '../../components/ui/Toast';
 
 const PhoneInputScreen = () => {
   const router = useRouter();
@@ -11,35 +12,87 @@ const PhoneInputScreen = () => {
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [toast, setToast] = useState<{
+    visible: boolean;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    setToast({ visible: true, message, type });
+  };
+
+  const hideToast = () => {
+    setToast(prev => ({ ...prev, visible: false }));
+  };
+
+  const validatePhone = (phoneNumber: string) => {
+    // Basic phone validation for Nepal numbers
+    const phoneRegex = /^(\+977|977)?[9][6-8]\d{8}$/;
+    return phoneRegex.test(phoneNumber.replace(/\s/g, ''));
+  };
+
+  const validateName = (name: string) => {
+    return name.trim().length >= 2;
+  };
 
   const handleVerify = async () => {
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-    try {
-      const mobile = phone.trim();
-      const response = await apiClient.post('/auth/register', { firstName, lastName, mobile });
+    const trimmedFirstName = firstName.trim();
+    const trimmedLastName = lastName.trim();
+    const trimmedPhone = phone.trim();
 
-      if (response.data.statusCode === 200) { // User exists
-        setError('Phone number already exists. Please log in or use a different number.');
-      } else if (response.data.statusCode === 201) { // New user, registration successful
-        setSuccess('Registration successful. Please verify your OTP.');
-        setTimeout(() => router.push({
-          pathname: '/(auth)/verify',
-          params: { mobile }
-        }), 2000); // Redirect after 2 seconds
+    // Validation
+    if (!trimmedFirstName || !validateName(trimmedFirstName)) {
+      showToast('Please enter a valid first name (at least 2 characters)', 'error');
+      return;
+    }
+
+    if (!trimmedLastName || !validateName(trimmedLastName)) {
+      showToast('Please enter a valid last name (at least 2 characters)', 'error');
+      return;
+    }
+
+    if (!trimmedPhone || !validatePhone(trimmedPhone)) {
+      showToast('Please enter a valid phone number', 'error');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      const response = await apiClient.post('/auth/register', { 
+        firstName: trimmedFirstName, 
+        lastName: trimmedLastName, 
+        mobile: trimmedPhone 
+      });
+
+      if (response.data.statusCode === 200) {
+        showToast('Phone number already exists. Please log in or use a different number.', 'error');
+      } else if (response.data.statusCode === 201) {
+        showToast('Registration successful! Please verify your OTP.', 'success');
+        setTimeout(() => {
+          router.push({
+            pathname: '/(auth)/verify',
+            params: { mobile: trimmedPhone }
+          });
+        }, 2000);
       } else {
-        setError('Unexpected response. Please try again.');
+        showToast('Unexpected response. Please try again.', 'error');
       }
-    } catch (err) {
-      if (typeof err === 'object' && err !== null && 'response' in err && (err as any).response?.status === 400) {
-        setError('Phone number already exists. Please log in or use a different number.');
+    } catch (err: any) {
+      if (err.response?.status === 400) {
+        showToast('Phone number already exists. Please log in or use a different number.', 'error');
       } else {
-        setError('Failed to register. Please try again.');
+        let errorMessage = 'Failed to register. Please try again.';
+        if (err.response?.data?.message) {
+          errorMessage = err.response.data.message;
+        }
+        showToast(errorMessage, 'error');
       }
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -50,9 +103,11 @@ const PhoneInputScreen = () => {
       <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
         <Icon name="arrow-left" size={20} color="#000" />
       </TouchableOpacity>
+      
       <View style={styles.contentContainer}>
         <Text style={styles.title}>Join us via phone number</Text>
         <Text style={styles.subtitle}>Enter your details to register</Text>
+        
         <TextInput
           style={styles.input}
           value={firstName}
@@ -60,14 +115,18 @@ const PhoneInputScreen = () => {
           placeholder="Enter your First Name"
           placeholderTextColor="#ccc"
           autoFocus
+          maxLength={30}
         />
+        
         <TextInput
           style={styles.input}
           value={lastName}
           onChangeText={setLastName}
           placeholder="Enter your Last Name"
           placeholderTextColor="#ccc"
+          maxLength={30}
         />
+        
         <TextInput
           style={styles.input}
           value={phone}
@@ -75,9 +134,9 @@ const PhoneInputScreen = () => {
           keyboardType="phone-pad"
           placeholder="Enter your phone number"
           placeholderTextColor="#ccc"
+          maxLength={15}
         />
-        {error && <Text style={styles.error}>{error}</Text>}
-        {success && <Text style={styles.success}>{success}</Text>}
+        
         <Button
           mode="contained"
           style={styles.button}
@@ -85,30 +144,83 @@ const PhoneInputScreen = () => {
           disabled={loading || !firstName.trim() || !lastName.trim() || !phone.trim()}
           contentStyle={styles.buttonContent}
         >
-          {loading ? <ActivityIndicator color="#000" /> : 'Verify'}
+          {loading ? <ActivityIndicator color="#fff" /> : 'Register'}
         </Button>
+        
         <TouchableOpacity onPress={() => router.push('/(auth)/phoneLogin')}>
           <Text style={styles.link}>Already have an account? Log in</Text>
         </TouchableOpacity>
       </View>
+      
       <View style={styles.keyboardPlaceholder} />
+
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={hideToast}
+        duration={4000}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingHorizontal: 16 },
-  backButton: { padding: 10, marginTop: 40 },
-  contentContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  title: { fontSize: 25, fontWeight: 'bold', marginBottom: 10, textAlign: 'center', color: '#333' },
-  subtitle: { fontSize: 15, color: '#666', textAlign: 'center', marginBottom: 30 },
-  input: { width: '100%', height: 48, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, paddingHorizontal: 10, marginBottom: 15, color: '#000' },
-  error: { color: 'red', marginBottom: 10 },
-  success: { color: 'green', marginBottom: 10 },
-  button: { width: '100%', backgroundColor: '#00809D', borderRadius: 12 },
-  buttonContent: { height: 48 },
-  link: { color: '#00809D', marginTop: 15, textDecorationLine: 'underline' },
-  keyboardPlaceholder: { height: 200 },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#fff', 
+    paddingHorizontal: 16 
+  },
+  backButton: { 
+    padding: 10, 
+    marginTop: 40 
+  },
+  contentContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  title: { 
+    fontSize: 25, 
+    fontWeight: 'bold', 
+    marginBottom: 10, 
+    textAlign: 'center', 
+    color: '#333' 
+  },
+  subtitle: { 
+    fontSize: 15, 
+    color: '#666', 
+    textAlign: 'center', 
+    marginBottom: 30 
+  },
+  input: { 
+    width: '100%', 
+    height: 48, 
+    borderWidth: 1, 
+    borderColor: '#ccc', 
+    borderRadius: 8, 
+    paddingHorizontal: 10, 
+    marginBottom: 15, 
+    color: '#000',
+    fontSize: 16
+  },
+  button: { 
+    width: '100%', 
+    backgroundColor: '#00809D', 
+    borderRadius: 12 
+  },
+  buttonContent: { 
+    height: 48 
+  },
+  link: { 
+    color: '#00809D', 
+    marginTop: 15, 
+    textDecorationLine: 'underline',
+    fontSize: 16
+  },
+  keyboardPlaceholder: { 
+    height: 200 
+  },
 });
 
 export default PhoneInputScreen;

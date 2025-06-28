@@ -25,6 +25,21 @@ export const getAccessToken = async () => {
   return accessToken;
 };
 
+export const initializeApiClient = async () => {
+  try {
+    const token = await AsyncStorage.getItem('accessToken');
+    if (token) {
+      accessToken = token;
+      apiClient.defaults.headers.Authorization = `Bearer ${token}`;
+      console.log('API client initialized with stored token');
+    } else {
+      console.log('No stored token found');
+    }
+  } catch (error) {
+    console.error('Error initializing API client:', error);
+  }
+};
+
 export const clearAccessToken = async () => {
   accessToken = '';
   await AsyncStorage.removeItem('accessToken');
