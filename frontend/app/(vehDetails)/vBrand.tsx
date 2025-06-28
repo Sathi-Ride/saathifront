@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, StatusBar, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, StatusBar, Alert, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useDriverRegistration } from '../DriverRegistrationContext';
@@ -10,6 +10,9 @@ const Brand = () => {
   const router = useRouter();
   const { registrationData, updateRegistrationData } = useDriverRegistration();
   const [brand, setBrand] = useState(registrationData.vehicleMake || '');
+  const [model, setModel] = useState(registrationData.vehicleModel || '');
+  const [year, setYear] = useState(registrationData.vehicleYear || '');
+  const [color, setColor] = useState(registrationData.vehicleColor || '');
 
   const handleBack = () => {
     router.back();
@@ -20,40 +23,105 @@ const Brand = () => {
       Alert.alert('Error', 'Please enter a brand');
       return;
     }
+    if (!model.trim()) {
+      Alert.alert('Error', 'Please enter a model');
+      return;
+    }
+    if (!year.trim()) {
+      Alert.alert('Error', 'Please enter a year');
+      return;
+    }
+    if (!color.trim()) {
+      Alert.alert('Error', 'Please enter a color');
+      return;
+    }
+    
+    // Validate year range
+    const yearNum = parseInt(year);
+    if (isNaN(yearNum) || yearNum < 1900 || yearNum > 2025) {
+      Alert.alert('Error', 'Please enter a valid year between 1900 and 2025');
+      return;
+    }
+    
     updateRegistrationData({
       ...registrationData,
       vehicleMake: brand,
+      vehicleModel: model,
+      vehicleYear: yearNum, // Store as number
+      vehicleColor: color,
     });
     router.push('/(vehDetails)/regPlate');
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <View style={styles.header}>
         <TouchableOpacity onPress={handleBack}>
           <Icon name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Brand</Text>
+        <Text style={styles.headerTitle}>Vehicle Details</Text>
         <TouchableOpacity onPress={handleBack} style={styles.closeButton}>
           <Text style={styles.closeText}>Close</Text>
         </TouchableOpacity>
       </View>
       <View style={styles.content}>
-        <TextInput
-          style={styles.input}
-          value={brand}
-          onChangeText={setBrand}
-          placeholder="Enter brand"
-          placeholderTextColor="#ccc"
-        />
-        <TouchableOpacity style={styles.doneButton} onPress={handleDone} disabled={!brand.trim()}>
-          <Text style={[styles.doneButtonText, !brand.trim() && styles.doneButtonTextDisabled]}>
-            Done
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Vehicle Information</Text>
+          
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Brand</Text>
+            <TextInput
+              style={styles.input}
+              value={brand}
+              onChangeText={setBrand}
+              placeholder="e.g., Honda, Toyota, Suzuki"
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Model</Text>
+            <TextInput
+              style={styles.input}
+              value={model}
+              onChangeText={setModel}
+              placeholder="e.g., Civic, Corolla, Swift"
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Year</Text>
+            <TextInput
+              style={styles.input}
+              value={year}
+              onChangeText={setYear}
+              placeholder="e.g., 2020"
+              keyboardType="numeric"
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Color</Text>
+            <TextInput
+              style={styles.input}
+              value={color}
+              onChangeText={setColor}
+              placeholder="e.g., Red, Blue, White"
+            />
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.doneButton, (!brand.trim() || !model.trim() || !year.trim() || !color.trim()) && styles.doneButtonDisabled]}
+          onPress={handleDone}
+          disabled={!brand.trim() || !model.trim() || !year.trim() || !color.trim()}
+        >
+          <Text style={[styles.doneButtonText, (!brand.trim() || !model.trim() || !year.trim() || !color.trim()) && styles.doneButtonTextDisabled]}>
+            Next
           </Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
@@ -61,17 +129,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    paddingTop: 30,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-    backgroundColor: '#fff',
+    borderBottomColor: '#eee',
   },
   headerTitle: {
     fontSize: 20,
@@ -88,35 +154,42 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   content: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    margin: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    alignItems: 'center',
+    padding: 16,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 16,
+  },
+  inputContainer: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
   },
   input: {
-    width: '100%',
-    height: 60,
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 8,
-    paddingHorizontal: 10,
-    marginBottom: 20,
-    backgroundColor: '#f5f5f5',
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: '#f9f9f9',
   },
   doneButton: {
     backgroundColor: '#075B5E',
-    borderRadius: 25,
     paddingVertical: 16,
+    borderRadius: 12,
     alignItems: 'center',
-    width: 350,
+    marginTop: 20,
+  },
+  doneButtonDisabled: {
+    backgroundColor: '#ccc',
   },
   doneButtonText: {
     color: '#fff',

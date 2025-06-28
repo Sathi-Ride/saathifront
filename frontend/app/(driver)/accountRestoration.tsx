@@ -29,7 +29,7 @@ const AccountRestoration = () => {
     setLoading(true);
     try {
       // Send OTP
-      const response = await apiClient.post('/api/v1/auth/login', { mobile: phoneNumber });
+      const response = await apiClient.post('auth/login', { mobile: phoneNumber });
       if (response.data.statusCode === 201 || response.data.statusCode === 200) {
         setStep('otp');
         Alert.alert('OTP Sent', 'An OTP has been sent to your phone.');
@@ -54,14 +54,14 @@ const AccountRestoration = () => {
     setLoading(true);
     try {
       // Verify OTP
-      const response = await apiClient.post('/api/v1/auth/verify-otp', { mobile: phoneNumber, otp });
+      const response = await apiClient.post('auth/verify-otp', { mobile: phoneNumber, otp });
       if (response.data.statusCode === 201 || response.data.statusCode === 200) {
         const { accessToken } = response.data.data;
         setAccessToken(accessToken);
         apiClient.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
         // Fetch driver profile
         try {
-          const profileRes = await apiClient.get('/api/v1/driver-profile/');
+          const profileRes = await apiClient.get('driver-profile/');
           if (profileRes.data && profileRes.data.data) {
             // Driver profile exists, go to driver home
             router.push({ pathname: '/(driver)', params: { isAccountRestored: 'true' } });

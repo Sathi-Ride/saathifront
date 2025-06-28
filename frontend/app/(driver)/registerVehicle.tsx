@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,15 +6,52 @@ import {
   StyleSheet,
   SafeAreaView,
   StatusBar,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, ChevronRight} from 'lucide-react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useDriverRegistration } from '../DriverRegistrationContext';
+import apiClient from '../utils/apiClient';
+
+type Vehicle = {
+  _id: string;
+  name: string;
+  description?: string;
+  basePrice?: number;
+};
 
 const ChooseVehicle = () => {
   const router = useRouter();
   const { updateRegistrationData } = useDriverRegistration();
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchVehicleTypes();
+  }, []);
+
+  const fetchVehicleTypes = async () => {
+    try {
+      setLoading(true);
+      const response = await apiClient.get('vehicle-types');
+      if (response.data.statusCode === 200) {
+        setVehicles(response.data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch vehicle types:', error);
+      Alert.alert('Error', 'Failed to load vehicle types. Please try again.');
+      // Fallback to default vehicles
+      setVehicles([
+        { _id: 'car', name: 'Car', description: '4-seater car' },
+        { _id: 'rickshaw', name: 'Rickshaw', description: '3-wheeler rickshaw' },
+        { _id: 'motorcycle', name: 'Motorcycle', description: '2-wheeler motorcycle' },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleBack = () => {
     router.back();
@@ -29,11 +66,25 @@ const ChooseVehicle = () => {
     router.push(`/registration?vehicle=${vehicleType}`);
   };
 
-  const vehicles = [
-    { id: 'car', name: 'Car', iconName: 'car' },
-    { id: 'rickshaw', name: 'Rickshaw', iconName: 'rickshaw' },
-    { id: 'motorcycle', name: 'Motorcycle', iconName: 'motorbike' },
-  ];
+  const getVehicleIcon = (vehicleName: string) => {
+    const name = vehicleName.toLowerCase();
+    if (name.includes('car')) return 'car';
+    if (name.includes('motorcycle') || name.includes('bike')) return 'motorbike';
+    if (name.includes('rickshaw')) return 'rickshaw';
+    return 'car'; // default
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#075B5E" />
+          <Text style={styles.loadingText}>Loading vehicle types...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -55,15 +106,23 @@ const ChooseVehicle = () => {
         <View style={styles.vehicleList}>
           {vehicles.map((vehicle) => (
             <TouchableOpacity
-              key={vehicle.id}
+              key={vehicle._id}
               style={styles.vehicleItem}
-              onPress={() => handleVehicleSelect(vehicle.id)}
+              onPress={() => handleVehicleSelect(vehicle._id)}
             >
               <View style={styles.vehicleContent}>
                 <View style={styles.vehicleIcon}>
-                  <MaterialCommunityIcons name={vehicle.iconName} size={32} color="#333" />
+                  <MaterialCommunityIcons name={getVehicleIcon(vehicle.name)} size={32} color="#333" />
                 </View>
-                <Text style={styles.vehicleName}>{vehicle.name}</Text>
+                <View style={styles.vehicleInfo}>
+                  <Text style={styles.vehicleName}>{vehicle.name}</Text>
+                  {vehicle.description && (
+                    <Text style={styles.vehicleDescription}>{vehicle.description}</Text>
+                  )}
+                  {vehicle.basePrice && (
+                    <Text style={styles.vehiclePrice}>Base: ₹{vehicle.basePrice}</Text>
+                  )}
+                </View>
               </View>
               <ChevronRight size={20} color="#666" />
             </TouchableOpacity>
@@ -78,6 +137,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
   },
   header: {
     flexDirection: 'row',
@@ -135,16 +204,28 @@ const styles = StyleSheet.create({
   vehicleContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   vehicleIcon: {
     marginRight: 16,
   },
-  vehicleEmoji: {
-    fontSize: 32,
+  vehicleInfo: {
+    flex: 1,
   },
   vehicleName: {
     fontSize: 18,
     color: '#333',
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  vehicleDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 2,
+  },
+  vehiclePrice: {
+    fontSize: 12,
+    color: '#075B5E',
     fontWeight: '500',
   },
 });

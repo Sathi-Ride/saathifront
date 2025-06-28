@@ -37,10 +37,11 @@ const ProfileSettingsScreen = () => {
     }
 
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: 'images',
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 1,
+      quality: 0.8,
+      base64: false,
     });
 
     if (!pickerResult.canceled) {

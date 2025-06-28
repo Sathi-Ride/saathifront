@@ -9,7 +9,7 @@ const { width, height } = Dimensions.get('window');
 
 const HomeScreen = () => {
   const router = useRouter();
-  const { isAccountRestored: initialRestored } = useLocalSearchParams();
+  const { isAccountRestored: initialRestored, registrationComplete } = useLocalSearchParams();
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
   const [role, setRole] = useState<'driver' | 'passenger'>('driver');
   const [rideInProgress, setRideInProgress] = useState(false);
@@ -20,13 +20,13 @@ const HomeScreen = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (initialRestored === 'true') {
+    if (initialRestored === 'true' || registrationComplete === 'true') {
       setIsAccountRestored(true);
       fetchProfile();
     } else {
       setLoading(false);
     }
-  }, [initialRestored]);
+  }, [initialRestored, registrationComplete]);
 
   const fetchProfile = async () => {
     try {
@@ -53,7 +53,6 @@ const HomeScreen = () => {
         setIsAccountRestored(false); // Reset if no profile exists
       }
     } catch (err) {
-      console.error('Failed to fetch profile:', err);
       setIsAccountRestored(false); // Assume no profile on error
       Alert.alert('Error', 'Failed to load profile data.');
     } finally {
@@ -87,19 +86,30 @@ const HomeScreen = () => {
       </View>
       <View style={styles.content}>
         <View style={styles.incomeCard}>
-          <Text style={styles.incomeTitle}>Tips for drivers</Text>
-          <View style={styles.benefitItem}>
-            <Clock size={20} color="#333" />
-            <Text style={styles.benefitText}>Peak hours are 8-10 AM and 6-8 PM</Text>
-          </View>
-          <View style={styles.benefitItem}>
-            <BrushCleaning size={20} color="#333" />
-            <Text style={styles.benefitText}>Keep your vehicle clean</Text>
-          </View>
-          <View style={styles.benefitItem}>
-            <Star size={20} color="#333" />
-            <Text style={styles.benefitText}>Maintain good ratings</Text>
-          </View>
+          <Text style={styles.incomeTitle}>
+            {registrationComplete === 'true' ? 'Welcome to Saathi! 🎉' : 'Tips for drivers'}
+          </Text>
+          {registrationComplete === 'true' ? (
+            <>
+              <Text style={styles.welcomeText}>Your driver profile has been created successfully!</Text>
+              <Text style={styles.welcomeText}>You can now start accepting rides and earning money.</Text>
+            </>
+          ) : (
+            <>
+              <View style={styles.benefitItem}>
+                <Clock size={20} color="#333" />
+                <Text style={styles.benefitText}>Peak hours are 8-10 AM and 6-8 PM</Text>
+              </View>
+              <View style={styles.benefitItem}>
+                <BrushCleaning size={20} color="#333" />
+                <Text style={styles.benefitText}>Keep your vehicle clean</Text>
+              </View>
+              <View style={styles.benefitItem}>
+                <Star size={20} color="#333" />
+                <Text style={styles.benefitText}>Maintain good ratings</Text>
+              </View>
+            </>
+          )}
         </View>
         {!isAccountRestored ? (
           <>
@@ -304,6 +314,11 @@ const styles = StyleSheet.create({
   detailText: {
     fontSize: 16,
     color: '#666',
+    marginBottom: 8,
+  },
+  welcomeText: {
+    fontSize: 16,
+    color: '#333',
     marginBottom: 8,
   },
 });
