@@ -1,7 +1,8 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import webSocketService from './websocketService';
 
-const API_URL = 'http://192.168.1.74:9000/api/v1';
+const API_URL = 'http://192.168.0.2:9000/api/v1';
 
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -16,6 +17,8 @@ export const setAccessToken = async (token: string) => {
   accessToken = token;
   await AsyncStorage.setItem('accessToken', token);
   apiClient.defaults.headers.Authorization = `Bearer ${token}`;
+  // Reconnect websockets with new token
+  await webSocketService.reconnectAllWithNewToken();
 };
 
 export const getAccessToken = async () => {

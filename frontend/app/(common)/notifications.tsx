@@ -1,14 +1,35 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, StatusBar } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
+import websocketService from '../utils/websocketService';
 
 const Notifications = () => {
   const router = useRouter();
+  const [notifications, setNotifications] = useState<any[]>([]);
 
   const handleBackPress = () => {
     router.back();
   };
+
+  useEffect(() => {
+    let isMounted = true;
+    let rideCompletedListener: any;
+    async function setupWebSocket() {
+      try {
+        await websocketService.connect();
+        rideCompletedListener = (data: any) => {
+          if (isMounted) setNotifications(prev => [{ type: 'rideCompleted', ...data, createdAt: new Date() }, ...prev]);
+        };
+        websocketService.on('rideCompleted', rideCompletedListener);
+      } catch (err) {}
+    }
+    setupWebSocket();
+    return () => {
+      isMounted = false;
+      if (rideCompletedListener) websocketService.off('rideCompleted', rideCompletedListener);
+    };
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -20,9 +41,21 @@ const Notifications = () => {
         <Text style={styles.headerTitle}>Notifications</Text>
       </View>
       <View style={styles.content}>
-        <Icon name="notifications" size={80} color="#333" style={styles.icon} />
-        <Text style={styles.title}>You are all up to date</Text>
-        <Text style={styles.subtitle}>No new notifications</Text>
+        {notifications.length === 0 ? (
+          <>
+            <Icon name="notifications" size={80} color="#333" style={styles.icon} />
+            <Text style={styles.title}>You are all up to date</Text>
+            <Text style={styles.subtitle}>No new notifications</Text>
+          </>
+        ) : (
+          notifications.map((notif, idx) => (
+            <View key={idx} style={{ marginBottom: 16 }}>
+              <Text style={{ fontWeight: 'bold', color: '#075B5E' }}>{notif.type === 'rideCompleted' ? 'Ride Completed' : notif.type}</Text>
+              <Text>{notif.message || 'Your ride has been completed successfully.'}</Text>
+              <Text style={{ fontSize: 12, color: '#999' }}>{notif.createdAt?.toLocaleString?.() || ''}</Text>
+            </View>
+          ))
+        )}
       </View>
     </View>
   );

@@ -1,10 +1,20 @@
 import * as Location from 'expo-location';
 import apiClient from './apiClient';
 
+const GOOGLE_MAPS_API_KEY = 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg';
+
 export interface LocationData {
   latitude: number;
   longitude: number;
-  address?: string;
+  accuracy?: number;
+  timestamp?: number;
+}
+
+export interface RouteData {
+  distance: number;
+  duration: number;
+  polyline: string;
+  waypoints: Array<{lat: number, lng: number}>;
 }
 
 export interface GoogleMapsPlace {
@@ -37,6 +47,10 @@ export interface GoogleMapsDistance {
 
 class LocationService {
   private currentLocation: LocationData | null = null;
+  private locationSubscription: Location.LocationSubscription | null = null;
+  private isTracking = false;
+  private currentTrackingRole: 'driver' | 'passenger' | null = null;
+  private currentTrackingCallback: ((location: LocationData) => void) | null = null;
 
   // Request location permissions
   async requestPermissions(): Promise<boolean> {
@@ -54,7 +68,7 @@ class LocationService {
     try {
       const hasPermission = await this.requestPermissions();
       if (!hasPermission) {
-        throw new Error('Location permission denied');
+        throw new Error('Location permission not granted');
       }
 
       const location = await Location.getCurrentPositionAsync({
@@ -63,13 +77,12 @@ class LocationService {
         distanceInterval: 10,
       });
 
-      const currentLocation: LocationData = {
+      return {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
+        accuracy: location.coords.accuracy || undefined,
+        timestamp: location.timestamp,
       };
-
-      this.currentLocation = currentLocation;
-      return currentLocation;
     } catch (error) {
       console.error('Error getting current location:', error);
       throw error;
@@ -649,46 +662,264 @@ class LocationService {
     }
   }
 
-  // Start location tracking
-  async startLocationTracking(callback: (location: LocationData) => void): Promise<() => void> {
+  async startLocationTracking(
+    onLocationUpdate: (location: LocationData) => void,
+    options: {
+      accuracy?: Location.Accuracy;
+      timeInterval?: number;
+      distanceInterval?: number;
+      role?: 'driver' | 'passenger';
+    } = {}
+  ): Promise<void> {
     try {
       const hasPermission = await this.requestPermissions();
       if (!hasPermission) {
-        throw new Error('Location permission denied');
+        throw new Error('Location permission not granted');
       }
 
-      const subscription = await Location.watchPositionAsync(
+      const role = options.role || 'driver';
+      
+      // If already tracking, stop the current session first
+      if (this.isTracking) {
+        console.log(`Stopping existing location tracking for role: ${this.currentTrackingRole}`);
+        this.stopLocationTracking();
+      }
+
+      // For passengers, we don't need continuous location tracking during rides
+      // They only need one-time location updates for status pings
+      if (role === 'passenger') {
+        console.log('Passenger location tracking disabled - using one-time location updates only');
+        return;
+      }
+
+      this.isTracking = true;
+      this.currentTrackingRole = role;
+      this.currentTrackingCallback = onLocationUpdate;
+
+      this.locationSubscription = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 10000, // Update every 10 seconds
-          distanceInterval: 50, // Update every 50 meters
+          accuracy: options.accuracy || Location.Accuracy.High,
+          timeInterval: options.timeInterval || 5000,
+          distanceInterval: options.distanceInterval || 10,
         },
-        async (location) => {
+        (location) => {
           const locationData: LocationData = {
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
+            accuracy: location.coords.accuracy || undefined,
+            timestamp: location.timestamp,
           };
-          
           this.currentLocation = locationData;
-          callback(locationData);
-          
-          // Update location on backend - handle errors silently
-          try {
-            await this.updateUserLocation(locationData.latitude, locationData.longitude);
-          } catch (error) {
-            // Silently handle location update errors to prevent app crashes
-            console.warn('Failed to update location on backend:', error);
-          }
+          onLocationUpdate(locationData);
         }
       );
 
-      return () => {
-        subscription.remove();
-      };
+      console.log(`Location tracking started for role: ${role}`);
     } catch (error) {
       console.error('Error starting location tracking:', error);
+      this.isTracking = false;
+      this.currentTrackingRole = null;
+      this.currentTrackingCallback = null;
       throw error;
     }
+  }
+
+  stopLocationTracking(): void {
+    if (this.locationSubscription) {
+      this.locationSubscription.remove();
+      this.locationSubscription = null;
+      this.isTracking = false;
+      const stoppedRole = this.currentTrackingRole;
+      this.currentTrackingRole = null;
+      this.currentTrackingCallback = null;
+      console.log(`Location tracking stopped for role: ${stoppedRole}`);
+    }
+  }
+
+  // New method for passengers to get one-time location updates
+  async getPassengerLocationForPing(): Promise<LocationData> {
+    try {
+      const hasPermission = await this.requestPermissions();
+      if (!hasPermission) {
+        throw new Error('Location permission not granted');
+      }
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 10000,
+        distanceInterval: 50,
+      });
+
+      return {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        accuracy: location.coords.accuracy || undefined,
+        timestamp: location.timestamp,
+      };
+    } catch (error) {
+      console.error('Error getting passenger location for ping:', error);
+      throw error;
+    }
+  }
+
+  // Check if currently tracking for a specific role
+  isCurrentlyTrackingForRole(role: 'driver' | 'passenger'): boolean {
+    return this.isTracking && this.currentTrackingRole === role;
+  }
+
+  // Get current tracking status
+  getTrackingStatus(): { isTracking: boolean; role: 'driver' | 'passenger' | null } {
+    return {
+      isTracking: this.isTracking,
+      role: this.currentTrackingRole
+    };
+  }
+
+  async getRouteBetweenPoints(
+    origin: { lat: number; lng: number },
+    destination: { lat: number; lng: number },
+    waypoints?: Array<{ lat: number; lng: number }>
+  ): Promise<RouteData> {
+    try {
+      let url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&key=${GOOGLE_MAPS_API_KEY}`;
+      
+      if (waypoints && waypoints.length > 0) {
+        const waypointsStr = waypoints.map(wp => `${wp.lat},${wp.lng}`).join('|');
+        url += `&waypoints=${waypointsStr}`;
+      }
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status !== 'OK') {
+        throw new Error(`Google Maps API error: ${data.status}`);
+      }
+
+      const route = data.routes[0];
+      const leg = route.legs[0];
+
+      return {
+        distance: leg.distance.value, // in meters
+        duration: leg.duration.value, // in seconds
+        polyline: route.overview_polyline.points,
+        waypoints: route.legs.map((leg: any) => ({
+          lat: leg.start_location.lat,
+          lng: leg.start_location.lng,
+        })),
+      };
+    } catch (error) {
+      console.error('Error getting route:', error);
+      throw error;
+    }
+  }
+
+  async getAddressFromCoordinates(latitude: number, longitude: number): Promise<string> {
+    try {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_API_KEY}`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status !== 'OK' || !data.results[0]) {
+        throw new Error(`Geocoding API error: ${data.status}`);
+      }
+
+      return data.results[0].formatted_address;
+    } catch (error) {
+      console.error('Error getting address:', error);
+      throw error;
+    }
+  }
+
+  async getCoordinatesFromAddress(address: string): Promise<{ lat: number; lng: number }> {
+    try {
+      const encodedAddress = encodeURIComponent(address);
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodedAddress}&key=${GOOGLE_MAPS_API_KEY}`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status !== 'OK' || !data.results[0]) {
+        throw new Error(`Geocoding API error: ${data.status}`);
+      }
+
+      const location = data.results[0].geometry.location;
+      return {
+        lat: location.lat,
+        lng: location.lng,
+      };
+    } catch (error) {
+      console.error('Error getting coordinates:', error);
+      throw error;
+    }
+  }
+
+  async getNearbyPlaces(
+    location: { lat: number; lng: number },
+    radius: number = 1000,
+    type?: string
+  ): Promise<Array<{
+    name: string;
+    address: string;
+    location: { lat: number; lng: number };
+    rating?: number;
+    types: string[];
+  }>> {
+    try {
+      let url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${location.lat},${location.lng}&radius=${radius}&key=${GOOGLE_MAPS_API_KEY}`;
+      
+      if (type) {
+        url += `&type=${type}`;
+      }
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status !== 'OK') {
+        throw new Error(`Places API error: ${data.status}`);
+      }
+
+      return data.results.map((place: any) => ({
+        name: place.name,
+        address: place.vicinity,
+        location: {
+          lat: place.geometry.location.lat,
+          lng: place.geometry.location.lng,
+        },
+        rating: place.rating,
+        types: place.types,
+      }));
+    } catch (error) {
+      console.error('Error getting nearby places:', error);
+      throw error;
+    }
+  }
+
+  calculateDistanceBetweenPoints(
+    point1: { lat: number; lng: number },
+    point2: { lat: number; lng: number }
+  ): number {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = (point1.lat * Math.PI) / 180;
+    const φ2 = (point2.lat * Math.PI) / 180;
+    const Δφ = ((point2.lat - point1.lat) * Math.PI) / 180;
+    const Δλ = ((point2.lng - point1.lng) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // Distance in meters
+  }
+
+  isLocationWithinRadius(
+    center: { lat: number; lng: number },
+    point: { lat: number; lng: number },
+    radius: number
+  ): boolean {
+    const distance = this.calculateDistanceBetweenPoints(center, point);
+    return distance <= radius;
   }
 
   // Search places using Google Places Autocomplete API (fallback)

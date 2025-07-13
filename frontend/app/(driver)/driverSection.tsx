@@ -13,7 +13,8 @@ import {
   SafeAreaView,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import * as Location from 'expo-location';
+import { useRouter, usePathname } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { MapPin, Navigation, Clock, User, Car, Map } from 'lucide-react-native';
 import SidePanel from '../(common)/sidepanel';
@@ -21,15 +22,21 @@ import Toast from '../../components/ui/Toast';
 import { rideService, Ride } from '../utils/rideService';
 import { locationService } from '../utils/locationService';
 import apiClient from '../utils/apiClient';
+import webSocketService from '../utils/websocketService';
+import { userRoleManager, useUserRole } from '../utils/userRoleManager';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 
 const { width, height } = Dimensions.get('window');
 
 const DriverSection = () => {
   const router = useRouter();
+  const pathname = usePathname();
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
   const [role, setRole] = useState<'driver' | 'passenger'>('driver');
   const [rideInProgress, setRideInProgress] = useState(false);
+  
+  // Get current user role from global manager
+  const userRole = useUserRole();
   
   // Driver mode states
   const [isOnline, setIsOnline] = useState(false);
@@ -37,9 +44,12 @@ const DriverSection = () => {
   const [myRides, setMyRides] = useState<Ride[]>([]);
   const [currentRide, setCurrentRide] = useState<Ride | null>(null);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [stopLocationTracking, setStopLocationTracking] = useState<(() => void) | null>(null);
+  const [kycStatus, setKycStatus] = useState<'pending' | 'approved' | 'rejected' | 'verified' | null>(null);
+  const [pendingOfferRideId, setPendingOfferRideId] = useState<string | null>(null);
+  const [pendingOffers, setPendingOffers] = useState<Ride[]>([]);
   
   const [toast, setToast] = useState<{
     visible: boolean;
@@ -50,6 +60,9 @@ const DriverSection = () => {
     message: '',
     type: 'info',
   });
+
+  const [offerLoading, setOfferLoading] = useState<{ [key: string]: boolean }>({});
+  const [newRideRequest, setNewRideRequest] = useState<any>(null);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     setToast({ visible: true, message, type });
@@ -62,8 +75,8 @@ const DriverSection = () => {
   useEffect(() => {
     if (isOnline) {
       startLocationTracking();
-      loadAvailableRides();
       loadMyRides();
+      setupWebSocket();
     } else {
       setAvailableRides([]);
       setMyRides([]);
@@ -72,16 +85,26 @@ const DriverSection = () => {
         stopLocationTracking();
         setStopLocationTracking(null);
       }
+      // Disconnect WebSocket when going offline
+      webSocketService.disconnect();
     }
+
+    return () => {
+      // Clean up all event listeners when the effect re-runs or component unmounts
+      webSocketService.off('newRideRequest');
+      webSocketService.off('offerAccepted');
+      webSocketService.off('offerRejected');
+      webSocketService.off('rideCancelled');
+      webSocketService.off('rideUnavailable');
+      webSocketService.off('rideStatusUpdate');
+    };
   }, [isOnline]);
 
   // Cleanup location tracking on unmount
   useEffect(() => {
-    return () => {
-      if (stopLocationTracking) {
-        stopLocationTracking();
-      }
-    };
+    if (stopLocationTracking) {
+      stopLocationTracking();
+    }
   }, [stopLocationTracking]);
 
   const startLocationTracking = async () => {
@@ -89,54 +112,20 @@ const DriverSection = () => {
       const location = await locationService.getCurrentLocation();
       setCurrentLocation({ lat: location.latitude, lng: location.longitude });
       
-      const stopTracking = await locationService.startLocationTracking((newLocation) => {
+      await locationService.startLocationTracking((newLocation) => {
         setCurrentLocation({ lat: newLocation.latitude, lng: newLocation.longitude });
+      }, {
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 30000,
+        distanceInterval: 50,
+        role: 'driver'
       });
       
       // Store the stop function for cleanup
-      setStopLocationTracking(() => stopTracking);
+      setStopLocationTracking(() => () => locationService.stopLocationTracking());
     } catch (error) {
       console.warn('Error starting location tracking:', error);
       showToast('Location tracking started (offline mode)', 'info');
-    }
-  };
-
-  const loadAvailableRides = async () => {
-    try {
-      setLoading(true);
-      console.log('Driver: Loading available rides...');
-      
-      // Check if driver has a profile first
-      try {
-        const profileResponse = await apiClient.get('/driver-profile');
-        console.log('Driver: Profile check response:', profileResponse.data);
-        
-        if (profileResponse.data.statusCode !== 200) {
-          showToast('Please complete your driver profile first', 'error');
-          return;
-        }
-      } catch (profileError: any) {
-        console.error('Driver: Profile check failed:', profileError);
-        if (profileError.response?.status === 404) {
-          showToast('Please complete your driver profile first', 'error');
-          return;
-        }
-      }
-      
-      const rides = await rideService.getAllPendingRides();
-      console.log('Driver: Received rides from API:', rides);
-      setAvailableRides(rides);
-      
-      if (rides.length > 0) {
-        showToast(`Found ${rides.length} available rides`, 'info');
-      } else {
-        showToast('No rides available at the moment', 'info');
-      }
-    } catch (error) {
-      console.error('Driver: Error loading rides:', error);
-      showToast('Error loading rides', 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -149,38 +138,157 @@ const DriverSection = () => {
     }
   };
 
+  async function setupWebSocket() {
+    try {
+      // Connect to driver namespace for driver-specific events
+      await webSocketService.connect(undefined, 'driver');
+      
+      let isMounted = true;
+      let newRideRequestListener: any;
+      let offerAcceptedListener: any;
+      
+      // Listen for new ride requests (driver namespace)
+      newRideRequestListener = (event: any) => {
+        console.log('DriverSection: New ride request received:', event);
+        if (event && event.code === 200 && event.data) {
+          setAvailableRides(prev => {
+            if (prev.some(ride => ride._id === event.data._id)) return prev;
+            return [...prev, event.data];
+          });
+          showToast('New ride request received!', 'info');
+        }
+      };
+      webSocketService.on('newRideRequest', newRideRequestListener, 'driver');
+      
+      // Listen for offer accepted (driver namespace)
+      offerAcceptedListener = async (data: any) => {
+        if (!isMounted) return;
+        console.log('DriverSection: Offer accepted event received:', data);
+        if (data && data.code === 201 && data.data && data.data.ride) {
+          const ride = data.data.ride;
+          showToast('Your offer was accepted!', 'success');
+          // Set user role to driver before navigating
+          await userRoleManager.setRole('driver');
+          // Navigate to ride tracker with full ride details
+          router.push({
+            pathname: '../(common)/rideTracker',
+            params: {
+              rideId: ride._id,
+              driverName: ride.driver?.firstName + ' ' + ride.driver?.lastName,
+              from: ride.pickUp?.location,
+              to: ride.dropOff?.location,
+              fare: ride.offerPrice,
+              vehicle: ride.vehicle?.name,
+            },
+          });
+        } else if (data && data.code && data.code !== 201) {
+          showToast(data.message || 'Failed to accept offer. Please try again.', 'error');
+        }
+      };
+      webSocketService.on('offerAccepted', offerAcceptedListener, 'driver');
+      
+      // Cleanup function
+      return () => {
+        isMounted = false;
+        if (newRideRequestListener) webSocketService.off('newRideRequest', newRideRequestListener, 'driver');
+        if (offerAcceptedListener) webSocketService.off('offerAccepted', offerAcceptedListener, 'driver');
+      };
+      
+    } catch (error) {
+      console.error('DriverSection: WebSocket setup failed:', error);
+    }
+  }
+
   const onRefresh = async () => {
     setRefreshing(true);
     if (isOnline) {
-      await loadAvailableRides();
       await loadMyRides();
     }
     setRefreshing(false);
   };
 
-  const handleToggleOnline = async (value: boolean) => {
-    setIsOnline(value);
-    if (value) {
-      showToast('You are now online and receiving rides', 'success');
-    } else {
-      showToast('You are now offline', 'info');
+  const handleOnlineToggle = async () => {
+    try {
+      setLoading(true);
+      const newStatus = !isOnline;
+      
+      console.log('Driver: Toggling online status to:', newStatus);
+      
+      if (newStatus) {
+        // Check KYC status first
+        if (kycStatus !== 'approved' && kycStatus !== 'verified') {
+          if (kycStatus === null) {
+            showToast('Please complete your driver profile first', 'error');
+          } else if (kycStatus === 'pending') {
+            showToast('Please wait for KYC verification to be approved', 'error');
+          } else if (kycStatus === 'rejected') {
+            showToast('Your KYC was rejected. Please contact support.', 'error');
+          } else {
+            showToast('Please complete KYC verification before going online', 'error');
+          }
+          setLoading(false);
+          return;
+        }
+        
+        // Get current location
+        try {
+          // 1. Connect to WebSocket
+          await setupWebSocket();
+          if (!webSocketService.isSocketConnected()) {
+            throw new Error('WebSocket connection failed.');
+          }
+
+          // 2. Get location
+          const location = await locationService.getCurrentLocation();
+          console.log('Driver: Current location:', location);
+          
+          // 3. Ping status
+          webSocketService.emit('pingStatus', {
+            latitude: location.latitude,
+            longitude: location.longitude
+          }, 'driver');
+          const pingSuccess = true; // Assume success for now
+          
+          if (pingSuccess) {
+            setIsOnline(true);
+            showToast('You are now online!', 'success');
+          } else {
+            throw new Error('Failed to update online status.');
+          }
+        } catch (error: any) {
+          console.error('Driver: Failed to go online:', error.message);
+          showToast('Failed to go online. Please check your connection and try again.', 'error');
+          webSocketService.disconnect(); // Ensure cleanup on failure
+        }
+      } else {
+        // Going offline
+        setIsOnline(false);
+        showToast('You are now offline', 'info');
+      }
+    } catch (error) {
+      console.error('Driver: Error toggling online status:', error);
+      showToast('Error changing online status', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleMakeOffer = async (ride: Ride) => {
-    showToast('Making ride offer...', 'info');
     try {
-      // Make a ride offer instead of directly accepting
-      const offer = await rideService.makeRideOffer(ride._id, ride.offerPrice);
-      if (offer) {
-        showToast('Ride offer sent! Waiting for passenger response', 'success');
-        // Remove from available rides since we've made an offer
-        setAvailableRides(prev => prev.filter(r => r._id !== ride._id));
-      } else {
-        showToast('Failed to make ride offer', 'error');
-      }
+      console.log('handleMakeOffer called', ride);
+      setOfferLoading(prev => ({ ...prev, [ride._id]: true }));
+      setLoading(true);
+      const offeredPrice = ride.offerPrice || 200;
+      await webSocketService.connect('undefined', 'driver');
+      console.log('Emitting createRideOffer', { rideId: ride._id, offerAmount: offeredPrice });
+      setPendingOfferRideId(ride._id);
+      webSocketService.emit('createRideOffer', { rideId: ride._id, offerAmount: offeredPrice });
+      setLoading(false);
     } catch (error) {
-      showToast('Error making ride offer', 'error');
+      console.error('Error in handleMakeOffer:', error);
+      showToast('Error submitting offer. Please try again.', 'error');
+      setLoading(false);
+      setOfferLoading(prev => ({ ...prev, [ride._id]: false }));
     }
   };
 
@@ -201,14 +309,15 @@ const DriverSection = () => {
       if (success) {
         showToast('Ride started!', 'success');
         router.push({
-          pathname: "/(driver)/rideTracker",
+          pathname: "../(common)/rideTracker",
           params: {
             rideId: currentRide._id,
-            passengerName: `${currentRide.passenger.firstName} ${currentRide.passenger.lastName}`,
+            userRole: userRole, // Add userRole parameter
+            passengerName: `${currentRide.passenger ? currentRide.passenger.firstName : ''} ${currentRide.passenger ? currentRide.passenger.lastName : ''}`,
             from: currentRide.pickUpLocation,
             to: currentRide.dropOffLocation,
             fare: currentRide.offerPrice.toString(),
-            vehicle: currentRide.vehicleType.name,
+            vehicle: currentRide.vehicleType ? currentRide.vehicleType.name : '',
           },
         });
       } else {
@@ -236,9 +345,14 @@ const DriverSection = () => {
 
   const openSidePanel = () => setSidePanelVisible(true);
   const closeSidePanel = () => setSidePanelVisible(false);
-  const handleChangeRole = (newRole: 'driver' | 'passenger') => {
-    setRole(newRole);
-    if (newRole === 'passenger') router.push('/(tabs)');
+  const handleChangeRole = async (newRole: 'driver' | 'passenger') => {
+    if (newRole === 'passenger') {
+      await userRoleManager.setRole('passenger');
+      router.push('/(tabs)');
+    } else {
+      await userRoleManager.setRole('driver');
+      // Optionally navigate to driver dashboard or stay
+    }
     closeSidePanel();
   };
 
@@ -250,7 +364,7 @@ const DriverSection = () => {
         <View style={styles.passengerInfo}>
           <User size={20} color="#333" />
           <Text style={styles.passengerName}>
-            {item.passenger.firstName} {item.passenger.lastName}
+            {item.passenger ? item.passenger.firstName : ''} {item.passenger ? item.passenger.lastName : ''}
           </Text>
         </View>
         <Text style={styles.ridePrice}>₹{item.offerPrice}</Text>
@@ -259,15 +373,15 @@ const DriverSection = () => {
       <View style={styles.rideDetails}>
         <View style={styles.locationItem}>
           <MapPin size={16} color="#666" />
-          <Text style={styles.locationText}>Pickup: {item.pickUpLocation}</Text>
+          <Text style={styles.locationText}>Pickup: {item.pickUp?.location || 'N/A'}</Text>
         </View>
         <View style={styles.locationItem}>
           <Navigation size={16} color="#666" />
-          <Text style={styles.locationText}>Drop: {item.dropOffLocation}</Text>
+          <Text style={styles.locationText}>Drop: {item.dropOff?.location || 'N/A'}</Text>
         </View>
         <View style={styles.locationItem}>
           <Car size={16} color="#666" />
-          <Text style={styles.locationText}>Vehicle: {item.vehicleType.name}</Text>
+          <Text style={styles.locationText}>Vehicle: {item.vehicleType ? item.vehicleType.name : ''}</Text>
         </View>
       </View>
       
@@ -275,18 +389,84 @@ const DriverSection = () => {
         <TouchableOpacity
           style={styles.declineButton}
           onPress={() => handleDeclineRide(item)}
+          disabled={loading || pendingOfferRideId === item._id}
         >
           <Text style={styles.declineButtonText}>Decline</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={styles.acceptButton}
           onPress={() => handleMakeOffer(item)}
+          disabled={offerLoading[item._id] || loading}
+          style={[styles.acceptButton, offerLoading[item._id] && styles.acceptButtonDisabled]}
         >
-          <Text style={styles.acceptButtonText}>Make Offer</Text>
+          {offerLoading[item._id] ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.acceptButtonText}>Make Offer</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
   );
+
+  // Periodic location update when online
+  useEffect(() => {
+    let locationInterval: ReturnType<typeof setInterval>;
+    
+    if (isOnline) {
+      // Update location every 30 seconds when online
+      locationInterval = setInterval(async () => {
+        try {
+          const location = await locationService.getCurrentLocation();
+          
+          // Only send location ping if driver is online and not in an active ride
+          if (webSocketService.isSocketConnected('driver') && isOnline) {
+            // Check if driver is in an active ride by checking if we're on the ride tracker screen
+            const isInRide = pathname.includes('rideTracker');
+            if (!isInRide) {
+              webSocketService.emit('pingStatus', {
+                latitude: location.latitude,
+                longitude: location.longitude
+              }, 'driver');
+              console.log('Driver: Location updated via WebSocket ping');
+            } else {
+              console.log('Driver: Skipping location ping - in active ride');
+            }
+          }
+        } catch (error) {
+          console.error('Driver: Error updating location in interval:', error);
+        }
+      }, 30000); // 30 seconds
+    }
+
+    return () => {
+      if (locationInterval) {
+        clearInterval(locationInterval);
+      }
+    };
+  }, [isOnline, pathname]);
+
+  const checkKycStatus = async () => {
+    try {
+      const profileResponse = await apiClient.get('/driver-profile');
+      if (profileResponse.data.statusCode === 200) {
+        const profile = profileResponse.data.data;
+        setKycStatus(profile.kycStatus);
+        console.log('Driver: KYC status:', profile.kycStatus);
+        return profile.kycStatus;
+      }
+    } catch (error: any) {
+      console.error('Driver: Error checking KYC status:', error);
+      if (error.response?.status === 404) {
+        setKycStatus(null); // No profile found
+      }
+    }
+    return null;
+  };
+
+  // Check KYC status on component mount
+  useEffect(() => {
+    checkKycStatus();
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -294,15 +474,63 @@ const DriverSection = () => {
       
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
-          <MaterialIcons name="arrow-back" size={24} color="#000" />
+        <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Driver Section</Text>
-        <View style={styles.statusContainer}>
-          <Text style={styles.statusText}>{isOnline ? 'Online' : 'Offline'}</Text>
-          <View style={[styles.statusDot, isOnline && styles.statusDotOnline]} />
-        </View>
+        <TouchableOpacity onPress={openSidePanel} style={styles.menuButton}>
+          <MaterialIcons name="menu" size={24} color="#333" />
+        </TouchableOpacity>
       </View>
+
+      {/* KYC Status Indicator */}
+      {kycStatus && (
+        <View style={[styles.kycStatusContainer, 
+          (kycStatus === 'approved' || kycStatus === 'verified') ? styles.kycApproved :
+          kycStatus === 'pending' ? styles.kycPending :
+          styles.kycRejected
+        ]}>
+          <MaterialIcons 
+            name={
+              (kycStatus === 'approved' || kycStatus === 'verified') ? 'check-circle' :
+              kycStatus === 'pending' ? 'schedule' :
+              'error'
+            } 
+            size={16} 
+            color="white" 
+          />
+          <Text style={styles.kycStatusText}>
+            KYC: {(kycStatus === 'approved' || kycStatus === 'verified') ? 'Approved' : 
+                  kycStatus === 'pending' ? 'Pending' : 'Rejected'}
+          </Text>
+          {(kycStatus === 'pending' || kycStatus === 'rejected') && (
+            <TouchableOpacity 
+              style={styles.kycActionButton}
+              onPress={() => router.push('/registration')}
+            >
+              <Text style={styles.kycActionButtonText}>
+                {kycStatus === 'pending' ? 'Check Status' : 'Update Profile'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* KYC Not Complete Message */}
+      {kycStatus === null && (
+        <View style={styles.kycNotCompleteContainer}>
+          <MaterialIcons name="warning" size={24} color="#FF9800" />
+          <Text style={styles.kycNotCompleteText}>
+            Complete your driver profile to start accepting rides
+          </Text>
+          <TouchableOpacity 
+            style={styles.kycActionButton}
+            onPress={() => router.push('/registration')}
+          >
+            <Text style={styles.kycActionButtonText}>Complete Profile</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Map Section */}
       <View style={styles.mapContainer}>
@@ -351,7 +579,7 @@ const DriverSection = () => {
                     latitude: currentLocation.lat + (index * 0.001), // Simulate different locations
                     longitude: currentLocation.lng + (index * 0.001),
                   }}
-                  title={`${ride.passenger.firstName} ${ride.passenger.lastName}`}
+                  title={`${ride.passenger ? ride.passenger.firstName : ''} ${ride.passenger ? ride.passenger.lastName : ''}`}
                   description={`₹${ride.offerPrice}`}
                 >
                   <View style={styles.rideMarker}>
@@ -384,7 +612,7 @@ const DriverSection = () => {
           </View>
           <TouchableOpacity
             style={[styles.toggleButton, isOnline && styles.toggleButtonActive]}
-            onPress={() => handleToggleOnline(!isOnline)}
+            onPress={handleOnlineToggle}
             activeOpacity={0.8}
           >
             <View style={[styles.toggleThumb, isOnline && styles.toggleThumbActive]} />
@@ -438,7 +666,7 @@ const DriverSection = () => {
           <Text style={styles.currentRideTitle}>Current Ride</Text>
           <View style={styles.currentRideCard}>
             <Text style={styles.currentRideText}>
-              Passenger: {currentRide.passenger.firstName} {currentRide.passenger.lastName}
+              Passenger: {currentRide.passenger ? currentRide.passenger.firstName : ''} {currentRide.passenger ? currentRide.passenger.lastName : ''}
             </Text>
             <Text style={styles.currentRideText}>From: {currentRide.pickUpLocation}</Text>
             <Text style={styles.currentRideText}>To: {currentRide.dropOffLocation}</Text>
@@ -463,6 +691,15 @@ const DriverSection = () => {
           <Text style={styles.offlineSubtext}>Toggle the switch above to go online and start receiving rides</Text>
         </View>
       )}
+
+      {/* Pending Offers */}
+      {pendingOffers.map(ride => (
+        <View key={ride._id} style={{ padding: 16, margin: 8, backgroundColor: '#fff', borderRadius: 8, alignItems: 'center' }}>
+          <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>Waiting for passenger to accept...</Text>
+          <ActivityIndicator size="small" color="#075B5E" />
+          <Text style={{ marginTop: 8 }}>{ride.pickUp?.location} → {ride.dropOff?.location}</Text>
+        </View>
+      ))}
 
       <SidePanel
         visible={sidePanelVisible}
@@ -503,6 +740,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#000',
+  },
+  menuButton: {
+    padding: 8,
   },
   statusContainer: {
     flexDirection: 'row',
@@ -735,6 +975,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
   },
+  acceptButtonDisabled: {
+    backgroundColor: '#ccc',
+  },
   acceptButtonText: {
     color: '#fff',
     fontSize: 16,
@@ -808,6 +1051,53 @@ const styles = StyleSheet.create({
     color: '#999',
     textAlign: 'center',
     paddingHorizontal: 20,
+  },
+  kycStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  kycApproved: {
+    borderColor: '#4CAF50',
+  },
+  kycPending: {
+    borderColor: '#FFD700',
+  },
+  kycRejected: {
+    borderColor: '#EA2F14',
+  },
+  kycStatusText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#333',
+  },
+  kycActionButton: {
+    backgroundColor: '#FF9800',
+    borderRadius: 8,
+    padding: 8,
+    alignItems: 'center',
+  },
+  kycActionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  kycNotCompleteContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#FF9800',
+    borderRadius: 8,
+  },
+  kycNotCompleteText: {
+    marginLeft: 8,
+    fontSize: 16,
+    color: '#333',
   },
 });
 

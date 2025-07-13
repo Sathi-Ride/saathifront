@@ -1,116 +1,304 @@
 "use client"
 
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, StatusBar, ScrollView, Alert } from "react-native"
-import { WebView } from "react-native-webview"
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, StatusBar, ScrollView, Alert, ActivityIndicator, Image } from "react-native"
+import MapView, { Marker, Polyline } from 'react-native-maps'
 import Icon from "react-native-vector-icons/MaterialIcons"
 import { useRouter, useLocalSearchParams } from "expo-router"
+import { useState, useEffect } from "react"
+import { rideService } from '../utils/rideService'
+import { useUserRole } from '../utils/userRoleManager'
 
 const { width, height } = Dimensions.get("window")
+
+// Ride interface based on backend response
+interface RideDetails {
+  _id: string;
+  passenger: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    mobile: string;
+  };
+  driver?: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    mobile: string;
+    rating: number;
+  };
+  vehicleType: {
+    _id: string;
+    name: string;
+    basePrice: number;
+    pricePerKm: number;
+  };
+  pickUp?: {
+    location: string;
+    coords?: {
+      type: string;
+      coordinates: number[];
+    };
+  };
+  dropOff?: {
+    location: string;
+    coords?: {
+      type: string;
+      coordinates: number[];
+    };
+  };
+  pickUpLocation?: string;
+  pickUpLat?: number;
+  pickUpLng?: number;
+  pickUpTime?: Date;
+  dropOffLocation?: string;
+  dropOffLat?: number;
+  dropOffLng?: number;
+  offerPrice: number;
+  finalPrice?: number;
+  status: 'pending' | 'accepted' | 'in-progress' | 'completed' | 'cancelled';
+  comments?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  // Optional fields that might not be present
+  estDistance?: {
+    distance: {
+      text: string; // "4.7 km"
+      value: number; // 4700 (meters)
+    };
+    duration: {
+      text: string; // "26 min"
+      value: number; // 1560 (seconds)
+    };
+  };
+  progress?: number;
+  driverRating?: number;
+  passengerRating?: number;
+  driverProfile?: {
+    vehicleMake: string;
+    vehicleModel: string;
+    vehicleColor: string;
+    vehicleRegNum: string;
+    rating: number;
+    totalRides: number;
+  };
+}
 
 const RideDetailsScreen = () => {
   const router = useRouter()
   const params = useLocalSearchParams()
-  const {
-    date,
-    from,
-    to,
-    fare,
-    driverName,
-    vehicle,
-    vehicleNo,
-    status,
-    userRole,
-    passengerName,
-    rating,
-    pickupTime,
-    dropoffTime,
-    duration,
-    distance,
-  } = params
+  const rideId = params.rideId as string
+  const userRole = useUserRole()
 
-  // Extract string values from params (handle arrays)
+  const [rideDetails, setRideDetails] = useState<RideDetails | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchRideDetails = async () => {
+      if (!rideId) {
+        setError('Ride ID is required')
+        setLoading(false)
+        return
+      }
+
+      setLoading(true)
+      setError(null)
+      try {
+        console.log('[RideDetails] Fetching ride details for:', rideId)
+        const rideData = await rideService.getRideDetails(rideId)
+        console.log('[RideDetails] Received ride details:', rideData)
+        
+        if (rideData) {
+          setRideDetails(rideData)
+        } else {
+          console.log('[RideDetails] No ride details found, using fallback data')
+          setRideDetails(null) // Use fallback data
+        }
+      } catch (err) {
+        console.error('[RideDetails] Error fetching ride details:', err)
+        console.log('[RideDetails] Using fallback data due to error')
+        setRideDetails(null) // Use fallback data on error
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchRideDetails()
+  }, [rideId])
+
+  // Extract string values from params (handle arrays) for fallback
   const getString = (val: string | string[] | undefined, defaultVal = "") =>
     Array.isArray(val) ? val[0] || defaultVal : val || defaultVal
 
-  // Ride details with fallback dummy data
-  const rideDetails = {
-    date: getString(date, "Sat, 27 Jul 2024"),
-    from: getString(from, "Gwarko Karmanasa Marg"),
-    to: getString(to, "Kritishree Girls Hostel"),
-    fare: getString(fare, "142.00"),
-    driverName: getString(driverName, "Sharad Kumar"),
-    vehicle: getString(vehicle, "Red MOTOR-BIKE Honda"),
-    vehicleNo: getString(vehicleNo, "BAPRA02032PA2362"),
-    status: getString(status, "completed"),
-    userRole: getString(userRole, "passenger"), // Get from params
-    passengerName: getString(passengerName, "John Doe"),
-    rating: getString(rating, "4.8"),
-    pickupTime: getString(pickupTime, "12:39 pm"),
-    dropoffTime: getString(dropoffTime, "01:05 pm"),
-    duration: getString(duration, "26 min"),
-    distance: getString(distance, "4.7 km"),
+  // Fallback data from params if API fails
+  const fallbackData = {
+    date: getString(params.date, "Unknown Date"),
+    from: getString(params.from, "Unknown Location"),
+    to: getString(params.to, "Unknown Location"),
+    fare: getString(params.fare, "0"),
+    driverName: getString(params.driverName, "Unknown Driver"),
+    vehicle: getString(params.vehicle, "Unknown Vehicle"),
+    vehicleNo: getString(params.vehicleNo, ""),
+    status: getString(params.status, "completed"),
+    passengerName: getString(params.passengerName, "Unknown Passenger"),
+    rating: getString(params.rating, "0"),
+    driverRating: getString(params.driverRating, "0"),
+    pickupTime: getString(params.pickupTime, ""),
+    dropoffTime: getString(params.dropoffTime, ""),
+    duration: getString(params.duration, ""),
+    distance: getString(params.distance, ""),
+    pickupLat: getString(params.pickupLat, "27.7172"),
+    pickupLng: getString(params.pickupLng, "85.324"),
+    dropoffLat: getString(params.dropoffLat, "27.7089"),
+    dropoffLng: getString(params.dropoffLng, "85.3206"),
+    vehicleMake: getString(params.vehicleMake, ""),
+    vehicleColor: getString(params.vehicleColor, ""),
   }
 
-  const isDriver = rideDetails.userRole === "driver"
+  const isDriver = userRole === "driver"
 
-  // Map HTML exactly matching the image design
-  const mapHtml = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Ride Route</title>
-        <meta name="viewport" content="initial-scale=1.0, width=device-width">
-        <style>
-          #map { width: 100%; height: 100%; }
-          html, body { margin: 0; padding: 0; height: 100%; }
-          .leaflet-control-container { display: none; }
-        </style>
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-      </head>
-      <body>
-        <div id="map"></div>
-        <script>
-          var map = L.map('map', {
-            zoomControl: false,
-            attributionControl: false
-          }).setView([27.7172, 85.324], 13);
-          
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-          }).addTo(map);
-          
-          // Blue pickup marker (A)
-          var pickupIcon = L.divIcon({
-            html: '<div style="background: #2196F3; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; font-size: 10px;">A</div>',
-            iconSize: [20, 20],
-            className: 'pickup-marker'
-          });
-          
-          // Green destination marker (B)
-          var destinationIcon = L.divIcon({
-            html: '<div style="background: #4CAF50; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; font-size: 10px;">B</div>',
-            iconSize: [20, 20],
-            className: 'destination-marker'
-          });
-          
-          var pickupMarker = L.marker([27.7172, 85.324], {icon: pickupIcon}).addTo(map);
-          var destinationMarker = L.marker([27.7089, 85.3206], {icon: destinationIcon}).addTo(map);
-          
-          // Route line
-          var routeLine = L.polyline([
-            [27.7172, 85.324],
-            [27.7130, 85.320],
-            [27.7089, 85.3206]
-          ], {color: '#2196F3', weight: 4, opacity: 0.8}).addTo(map);
-          
-          // Fit map to show both markers with padding
-          var group = new L.featureGroup([pickupMarker, destinationMarker]);
-          map.fitBounds(group.getBounds().pad(0.15));
-        </script>
-      </body>
-    </html>
-  `
+  // Use real data if available, otherwise fallback
+  const rideData = rideDetails || fallbackData
+  const isRealData = !!rideDetails
+
+  // Format date for display
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      })
+    } catch {
+      return dateString
+    }
+  }
+
+  // Format time for display
+  const formatTime = (dateString: string) => {
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      })
+    } catch {
+      return dateString
+    }
+  }
+
+  // Get person name based on role
+  const getPersonName = () => {
+    if (isRealData) {
+      if (isDriver && rideDetails?.passenger) {
+        return `${rideDetails.passenger.firstName} ${rideDetails.passenger.lastName}`.trim() || 'Unknown Passenger'
+      } else if (!isDriver && rideDetails?.driver) {
+        return `${rideDetails.driver.firstName} ${rideDetails.driver.lastName}`.trim() || 'Unknown Driver'
+      } else if (!isDriver && !rideDetails?.driver) {
+        return 'Driver Not Assigned'
+      }
+    }
+    return isDriver ? fallbackData.passengerName : fallbackData.driverName
+  }
+
+  // Get person photo
+  const getPersonPhoto = () => {
+    // Photo property doesn't exist in the new interface, return null
+    return null
+  }
+
+  // Get vehicle info
+  const getVehicleInfo = () => {
+    if (isRealData && rideDetails?.driverProfile) {
+      return {
+        make: rideDetails.driverProfile.vehicleMake,
+        model: rideDetails.driverProfile.vehicleModel,
+        color: rideDetails.driverProfile.vehicleColor,
+        regNum: rideDetails.driverProfile.vehicleRegNum,
+        rating: rideDetails.driverProfile.rating,
+        totalRides: rideDetails.driverProfile.totalRides
+      }
+    }
+    return {
+      make: fallbackData.vehicle,
+      model: fallbackData.vehicleMake || "",
+      color: fallbackData.vehicleColor || "",
+      regNum: fallbackData.vehicleNo,
+      rating: parseFloat(fallbackData.driverRating || fallbackData.rating) || 0,
+      totalRides: 0
+    }
+  }
+
+  // Get locations
+  const getLocations = () => {
+    if (isRealData && rideDetails) {
+      return {
+        from: rideDetails.pickUpLocation || rideDetails.pickUp?.location || '',
+        to: rideDetails.dropOffLocation || rideDetails.dropOff?.location || '',
+        pickupLat: rideDetails.pickUpLat || rideDetails.pickUp?.coords?.coordinates?.[1] || 0,
+        pickupLng: rideDetails.pickUpLng || rideDetails.pickUp?.coords?.coordinates?.[0] || 0,
+        dropoffLat: rideDetails.dropOffLat || rideDetails.dropOff?.coords?.coordinates?.[1] || 0,
+        dropoffLng: rideDetails.dropOffLng || rideDetails.dropOff?.coords?.coordinates?.[0] || 0
+      }
+    }
+    return {
+      from: fallbackData.from,
+      to: fallbackData.to,
+      pickupLat: parseFloat(fallbackData.pickupLat),
+      pickupLng: parseFloat(fallbackData.pickupLng),
+      dropoffLat: parseFloat(fallbackData.dropoffLat),
+      dropoffLng: parseFloat(fallbackData.dropoffLng)
+    }
+  }
+
+  // Get fare
+  const getFare = () => {
+    if (isRealData && rideDetails) {
+      return rideDetails.offerPrice
+    }
+    return parseFloat(fallbackData.fare) || 0
+  }
+
+  // Get distance and duration
+  const getDistanceDuration = () => {
+    if (isRealData && rideDetails?.estDistance) {
+      return {
+        distance: rideDetails.estDistance.distance.text,
+        duration: rideDetails.estDistance.duration.text
+      }
+    }
+    return {
+      distance: fallbackData.distance || "Unknown",
+      duration: fallbackData.duration || "Unknown"
+    }
+  }
+
+  // Get ride date
+  const getRideDate = () => {
+    if (isRealData && rideDetails?.createdAt) {
+      return formatDate(rideDetails.createdAt.toString())
+    }
+    return fallbackData.date
+  }
+
+  // Get pickup and dropoff times
+  const getTimes = () => {
+    // startedAt and completedAt don't exist in the new interface, use fallback data
+    return {
+      pickup: fallbackData.pickupTime,
+      dropoff: fallbackData.dropoffTime
+    }
+  }
+
+  const locations = getLocations()
+  const vehicleInfo = getVehicleInfo()
+  const fare = getFare()
+  const distanceDuration = getDistanceDuration()
+  const rideDate = getRideDate()
+  const times = getTimes()
 
   const handleReceipt = () => {
     Alert.alert("Receipt", "Generating PDF receipt...", [
@@ -135,10 +323,10 @@ const RideDetailsScreen = () => {
     router.push({
       pathname: "/(tabs)",
       params: {
-        from: rideDetails.from,
-        to: rideDetails.to,
-        fare: rideDetails.fare,
-        vehicle: rideDetails.vehicle.includes("MOTOR-BIKE") ? "Moto" : "Ride",
+        from: locations.from,
+        to: locations.to,
+        fare: fare.toString(),
+        vehicle: rideDetails?.vehicleType?.name?.includes("MOTOR") ? "Moto" : "Ride",
       },
     })
   }
@@ -147,10 +335,10 @@ const RideDetailsScreen = () => {
     router.push({
       pathname: "/(tabs)",
       params: {
-        from: rideDetails.to,
-        to: rideDetails.from,
-        fare: rideDetails.fare,
-        vehicle: rideDetails.vehicle.includes("MOTOR-BIKE") ? "Moto" : "Ride",
+        from: locations.to,
+        to: locations.from,
+        fare: fare.toString(),
+        vehicle: rideDetails?.vehicleType?.name?.includes("MOTOR") ? "Moto" : "Ride",
       },
     })
   }
@@ -168,6 +356,52 @@ const RideDetailsScreen = () => {
     ])
   }
 
+  // Show loading state
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
+            <Icon name="arrow-back" size={24} color="#000" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Ride Details</Text>
+          <View style={styles.roleIndicator}>
+            <Text style={styles.roleText}>{userRole}</Text>
+          </View>
+        </View>
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#075B5E" />
+          <Text style={styles.loadingText}>Loading ride details...</Text>
+        </View>
+      </View>
+    )
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
+            <Icon name="arrow-back" size={24} color="#000" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Ride Details</Text>
+          <View style={styles.roleIndicator}>
+            <Text style={styles.roleText}>{userRole}</Text>
+          </View>
+        </View>
+        <View style={styles.centerContainer}>
+          <Icon name="error-outline" size={48} color="#F44336" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => window.location.reload()}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    )
+  }
 
   return (
     <View style={styles.container}>
@@ -178,24 +412,60 @@ const RideDetailsScreen = () => {
         <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
           <Icon name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{rideDetails.date}</Text>
-        {/* Debug: Show current role */}
+        <Text style={styles.headerTitle}>{rideDate}</Text>
         <View style={styles.roleIndicator}>
-          <Text style={styles.roleText}>{rideDetails.userRole}</Text>
+          <Text style={styles.roleText}>{userRole}</Text>
         </View>
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Map */}
         <View style={styles.mapContainer}>
-          <WebView
+          <MapView
             style={styles.map}
-            originWhitelist={["*"]}
-            source={{ html: mapHtml }}
-            scrollEnabled={false}
-            showsHorizontalScrollIndicator={false}
-            showsVerticalScrollIndicator={false}
-          />
+            initialRegion={{
+              latitude: locations.pickupLat,
+              longitude: locations.pickupLng,
+              latitudeDelta: Math.abs(locations.pickupLat - locations.dropoffLat) + 0.01,
+              longitudeDelta: Math.abs(locations.pickupLng - locations.dropoffLng) + 0.01,
+            }}
+            showsUserLocation={false}
+            showsMyLocationButton={false}
+            scrollEnabled={true}
+            zoomEnabled={true}
+            pitchEnabled={true}
+            rotateEnabled={true}
+            pointerEvents="auto"
+          >
+            {/* Pickup Marker */}
+            <Marker
+              coordinate={{
+                latitude: locations.pickupLat,
+                longitude: locations.pickupLng,
+              }}
+              title="Pickup"
+              pinColor="#2196F3"
+            />
+            {/* Dropoff Marker */}
+            <Marker
+              coordinate={{
+                latitude: locations.dropoffLat,
+                longitude: locations.dropoffLng,
+              }}
+              title="Dropoff"
+              pinColor="#4CAF50"
+            />
+            {/* Route Polyline */}
+            <Polyline
+              coordinates={[
+                { latitude: locations.pickupLat, longitude: locations.pickupLng },
+                { latitude: (locations.pickupLat + locations.dropoffLat) / 2, longitude: (locations.pickupLng + locations.dropoffLng) / 2 },
+                { latitude: locations.dropoffLat, longitude: locations.dropoffLng }
+              ]}
+              strokeColor="#2196F3"
+              strokeWidth={4}
+            />
+          </MapView>
         </View>
 
         {/* Location Details */}
@@ -203,16 +473,16 @@ const RideDetailsScreen = () => {
           <View style={styles.locationRow}>
             <View style={styles.blueDot} />
             <View style={styles.locationInfo}>
-              <Text style={styles.locationName}>{rideDetails.from}</Text>
-              <Text style={styles.locationTime}>{rideDetails.pickupTime}</Text>
+              <Text style={styles.locationName}>{locations.from}</Text>
+              <Text style={styles.locationTime}>{times.pickup}</Text>
             </View>
           </View>
 
           <View style={styles.locationRow}>
             <View style={styles.greenDot} />
             <View style={styles.locationInfo}>
-              <Text style={styles.locationName}>{rideDetails.to}</Text>
-              <Text style={styles.locationTime}>{rideDetails.dropoffTime}</Text>
+              <Text style={styles.locationName}>{locations.to}</Text>
+              <Text style={styles.locationTime}>{times.dropoff}</Text>
             </View>
           </View>
         </View>
@@ -222,35 +492,58 @@ const RideDetailsScreen = () => {
           <View style={styles.statItem}>
             <Icon name="schedule" size={16} color="#666" />
             <Text style={styles.statLabel}>Duration</Text>
-            <Text style={styles.statValue}>{rideDetails.duration}</Text>
+            <Text style={styles.statValue}>{distanceDuration.duration}</Text>
           </View>
           <View style={styles.statItem}>
             <Icon name="straighten" size={16} color="#666" />
             <Text style={styles.statLabel}>Distance</Text>
-            <Text style={styles.statValue}>{rideDetails.distance}</Text>
+            <Text style={styles.statValue}>{distanceDuration.distance}</Text>
           </View>
         </View>
 
         {/* Driver/Passenger Info - Changes based on role */}
         <View style={styles.personSection}>
           <View style={[styles.personAvatar, isDriver && styles.driverAvatar]}>
-            <Icon name="person" size={24} color={isDriver ? "#075B5E" : "#fff"} />
+            {getPersonPhoto() ? (
+              <Image source={{ uri: getPersonPhoto()! }} style={styles.personImage} />
+            ) : (
+              <Icon name="person" size={24} color={isDriver ? "#075B5E" : "#fff"} />
+            )}
           </View>
           <View style={styles.personDetails}>
             {isDriver ? (
               <>
-                <Text style={styles.personName}>{rideDetails.passengerName}</Text>
+                <Text style={styles.personName}>{getPersonName()}</Text>
                 <Text style={styles.personSubtext}>Passenger</Text>
-                <View style={styles.ratingRow}>
-                  <Icon name="star" size={16} color="#FFD700" />
-                  <Text style={styles.ratingText}>{rideDetails.rating}</Text>
-                </View>
+                {rideDetails?.passengerRating && (
+                  <View style={styles.ratingRow}>
+                    <Icon name="star" size={16} color="#FFD700" />
+                    <Text style={styles.ratingText}>{rideDetails.passengerRating.toFixed(1)}</Text>
+                  </View>
+                )}
               </>
             ) : (
               <>
-                <Text style={styles.personName}>{rideDetails.driverName}</Text>
-                <Text style={styles.personSubtext}>{rideDetails.vehicle}</Text>
-                <Text style={styles.personSubtext}>{rideDetails.vehicleNo}</Text>
+                <Text style={styles.personName}>{getPersonName()}</Text>
+                {getPersonName() === 'Driver Not Assigned' ? (
+                  <Text style={styles.personSubtext}>No driver was assigned to this ride</Text>
+                ) : (
+                  <>
+                    <Text style={styles.personSubtext}>
+                      {vehicleInfo.make} {vehicleInfo.model}
+                    </Text>
+                    <Text style={styles.personSubtext}>{vehicleInfo.regNum}</Text>
+                    <View style={styles.ratingRow}>
+                      <Icon name="star" size={16} color="#FFD700" />
+                      <Text style={styles.ratingText}>
+                        {vehicleInfo.rating > 0 ? vehicleInfo.rating.toFixed(1) : 'N/A'}
+                      </Text>
+                      {vehicleInfo.totalRides > 0 && (
+                        <Text style={styles.ratingText}> • {vehicleInfo.totalRides} rides</Text>
+                      )}
+                    </View>
+                  </>
+                )}
               </>
             )}
           </View>
@@ -290,14 +583,14 @@ const RideDetailsScreen = () => {
 
           <View style={styles.paymentRow}>
             <Text style={styles.paymentLabel}>Fare</Text>
-            <Text style={styles.paymentAmount}>Rs {rideDetails.fare}</Text>
+            <Text style={styles.paymentAmount}>Rs {fare.toFixed(2)}</Text>
           </View>
 
           <View style={styles.totalPaymentRow}>
             <View style={styles.totalPaymentLeft}>
               <Text style={styles.totalPaymentLabel}>{isDriver ? "Total earned" : "Total paid"}</Text>
             </View>
-            <Text style={styles.totalPaymentAmount}>Rs {rideDetails.fare}</Text>
+            <Text style={styles.totalPaymentAmount}>Rs {fare.toFixed(2)}</Text>
           </View>
         </View>
 
@@ -428,9 +721,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
+    overflow: "hidden",
   },
   driverAvatar: {
     backgroundColor: "#f0f0f0",
+  },
+  personImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
   personDetails: {
     flex: 1,
@@ -534,6 +833,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#D32F2F",
     fontWeight: "500",
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: "#666",
+    marginTop: 12,
+  },
+  errorText: {
+    fontSize: 16,
+    color: "#F44336",
+    textAlign: "center",
+    marginTop: 12,
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: "#075B5E",
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
 })
 

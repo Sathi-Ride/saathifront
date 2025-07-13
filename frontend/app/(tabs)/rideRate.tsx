@@ -1,38 +1,97 @@
 "use client"
 
-import { useState } from "react"
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, TextInput, StatusBar, SafeAreaView } from "react-native"
+import { useState, useEffect } from "react"
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, TextInput, StatusBar, SafeAreaView, Animated } from "react-native"
 import Icon from "react-native-vector-icons/MaterialIcons"
 import { useRouter, useLocalSearchParams } from "expo-router"
+import { rideService } from '../utils/rideService'
+import webSocketService from '../utils/websocketService'
 
 const { width, height } = Dimensions.get("window")
 
 const RideRatingScreen = () => {
-  const { driverName, from, to, fare, vehicle } = useLocalSearchParams()
+  const { driverName, from, to, fare, vehicle, rideId } = useLocalSearchParams()
   const router = useRouter()
   const [rating, setRating] = useState(0)
   const [feedback, setFeedback] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [showConfetti, setShowConfetti] = useState(true)
+  const confettiAnimation = new Animated.Value(0)
+
+  useEffect(() => {
+    // Start confetti animation
+    if (showConfetti) {
+      Animated.sequence([
+        Animated.timing(confettiAnimation, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(confettiAnimation, {
+          toValue: 0,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setShowConfetti(false)
+      })
+    }
+  }, [])
 
   const handleStarPress = (index: number) => {
     setRating(index + 1)
   }
 
-  const handleSubmit = () => {
-    // API call to send rating and feedback to driver would go here
-    console.log(`Rating: ${rating}, Feedback: ${feedback}, Driver: ${driverName}`)
-    // Store in ride history (dummy for now)
-    const rideHistory = {
-      date: new Date().toLocaleString("en-US", { timeZone: "Asia/Kathmandu" }),
-      from,
-      to,
-      fare: Number.parseFloat(Array.isArray(fare) ? fare[0] : (fare ?? "")),
-      driver: driverName,
-      vehicle,
-      rating,
-      feedback,
+  const handleSubmit = async () => {
+    if (!rideId || rating === 0) return
+    setSubmitting(true)
+    try {
+      // Use WebSocket for rating if connected, otherwise fallback to REST
+      let success = false
+      
+      if (webSocketService.isSocketConnected()) {
+        // Use WebSocket for rating
+        success = await new Promise((resolve) => {
+          webSocketService.emitEvent('rateRide', {
+            rideId,
+            rating,
+            comment: feedback
+          }, (response: any) => {
+            resolve(response && response.code === 200)
+          })
+        })
+      } else {
+        // Fallback to REST API
+        success = await rideService.rateDriver(rideId as string, rating)
+      }
+      
+      if (success) {
+        // Show success animation
+        setShowConfetti(true)
+        Animated.sequence([
+          Animated.timing(confettiAnimation, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(confettiAnimation, {
+            toValue: 0,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          setTimeout(() => {
+        router.push('/(tabs)')
+          }, 1000)
+        })
+      } else {
+        alert('Failed to submit rating. Please try again.')
+      }
+    } catch (err) {
+      alert('Error submitting rating. Please try again.')
+    } finally {
+      setSubmitting(false)
     }
-    console.log("Ride History Updated:", rideHistory)
-    router.push("/(tabs)")
   }
 
   const getRatingText = () => {
@@ -55,6 +114,26 @@ const RideRatingScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#075B5E" />
+
+      {/* Confetti Animation */}
+      {showConfetti && (
+        <Animated.View style={[styles.confetti, { opacity: confettiAnimation }]}>
+          {[...Array(20)].map((_, i) => (
+            <Animated.View
+              key={i}
+              style={[
+                styles.confettiPiece,
+                {
+                  backgroundColor: ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'][i % 5],
+                  left: Math.random() * width,
+                  top: Math.random() * height,
+                  transform: [{ rotate: `${Math.random() * 360}deg` }],
+                },
+              ]}
+            />
+          ))}
+        </Animated.View>
+      )}
 
       {/* Header */}
       <View style={styles.header}>
@@ -88,6 +167,16 @@ const RideRatingScreen = () => {
               <Icon name="payment" size={20} color="#075B5E" />
               <Text style={styles.tripLabel}>Fare:</Text>
               <Text style={styles.tripValue}>₹{fare}</Text>
+            </View>
+            <View style={styles.tripRow}>
+              <Icon name="location-on" size={20} color="#075B5E" />
+              <Text style={styles.tripLabel}>From:</Text>
+              <Text style={styles.tripValue} numberOfLines={1}>{from}</Text>
+            </View>
+            <View style={styles.tripRow}>
+              <Icon name="location-on" size={20} color="#EA2F14" />
+              <Text style={styles.tripLabel}>To:</Text>
+              <Text style={styles.tripValue} numberOfLines={1}>{to}</Text>
             </View>
           </View>
         </View>
@@ -123,11 +212,11 @@ const RideRatingScreen = () => {
 
         {/* Submit Button */}
         <TouchableOpacity
-          style={[styles.submitButton, rating === 0 && styles.submitButtonDisabled]}
+          style={[styles.submitButton, (rating === 0 || submitting) && styles.submitButtonDisabled]}
           onPress={handleSubmit}
-          disabled={rating === 0}
+          disabled={rating === 0 || submitting}
         >
-          <Text style={styles.submitButtonText}>Submit Rating</Text>
+          <Text style={styles.submitButtonText}>{submitting ? 'Submitting...' : 'Submit Rating'}</Text>
           <Icon name="send" size={20} color="#fff" style={styles.submitIcon} />
         </TouchableOpacity>
 
@@ -311,6 +400,20 @@ const styles = StyleSheet.create({
     color: "#666",
     fontSize: 16,
     fontWeight: "500",
+  },
+  confetti: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+  },
+  confettiPiece: {
+    position: "absolute",
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
 })
 

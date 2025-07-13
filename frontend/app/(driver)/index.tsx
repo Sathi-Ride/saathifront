@@ -15,6 +15,8 @@ import { Clock, BrushCleaning, Star, CarFront } from 'lucide-react-native';
 import SidePanel from '../(common)/sidepanel';
 import Toast from '../../components/ui/Toast';
 import apiClient from '../utils/apiClient';
+import { userRoleManager } from '../utils/userRoleManager';
+import webSocketService from '../utils/websocketService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -92,9 +94,16 @@ const DriverHomeScreen = () => {
 
   const openSidePanel = () => setSidePanelVisible(true);
   const closeSidePanel = () => setSidePanelVisible(false);
-  const handleChangeRole = (newRole: 'driver' | 'passenger') => {
-    setRole(newRole);
-    if (newRole === 'passenger') router.push('/(tabs)');
+  const handleChangeRole = async (newRole: 'driver' | 'passenger') => {
+    await userRoleManager.setRole(newRole);
+    webSocketService.disconnect('driver');
+    webSocketService.disconnect('passenger');
+    webSocketService.disconnect('ride');
+    if (newRole === 'passenger') {
+      router.push('/(tabs)');
+    } else {
+      router.push('/(driver)');
+    }
     closeSidePanel();
   };
 

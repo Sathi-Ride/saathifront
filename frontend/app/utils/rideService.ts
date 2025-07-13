@@ -1,4 +1,5 @@
 import apiClient from './apiClient';
+import webSocketService from './websocketService';
 
 export interface RideRequest {
   vehicleType: string;
@@ -34,19 +35,54 @@ export interface Ride {
     basePrice: number;
     pricePerKm: number;
   };
-  pickUpLocation: string;
-  pickUpLat: number;
-  pickUpLng: number;
+  pickUp?: {
+    location: string;
+    coords?: {
+      type: string;
+      coordinates: number[];
+    };
+  };
+  dropOff?: {
+    location: string;
+    coords?: {
+      type: string;
+      coordinates: number[];
+    };
+  };
+  pickUpLocation?: string;
+  pickUpLat?: number;
+  pickUpLng?: number;
   pickUpTime?: Date;
-  dropOffLocation: string;
-  dropOffLat: number;
-  dropOffLng: number;
+  dropOffLocation?: string;
+  dropOffLat?: number;
+  dropOffLng?: number;
   offerPrice: number;
   finalPrice?: number;
   status: 'pending' | 'accepted' | 'in-progress' | 'completed' | 'cancelled';
   comments?: string;
   createdAt: Date;
   updatedAt: Date;
+  // Additional properties for ride details
+  estDistance?: {
+    distance: {
+      text: string;
+      value: number;
+    };
+    duration: {
+      text: string;
+      value: number;
+    };
+  };
+  driverProfile?: {
+    _id: string;
+    rating: number;
+    totalRides: number;
+    vehicleColor: string;
+    vehicleMake: string;
+    vehicleModel: string;
+    vehicleRegNum: string;
+    vehicleYear?: number;
+  };
 }
 
 export interface RideOffer {
@@ -79,6 +115,23 @@ export interface VehicleType {
 }
 
 class RideService {
+  // Simulated ride progress tracking
+  private rideProgressSimulation: {
+    [rideId: string]: {
+      phase: 'pickup' | 'in-progress' | 'dropoff' | 'completed';
+      progress: number;
+      startTime: number;
+      estimatedDuration: number;
+      currentLocation: { lat: number; lng: number };
+      pickupLocation: { lat: number; lng: number };
+      dropoffLocation: { lat: number; lng: number };
+      interval?: any;
+    };
+  } = {};
+
+  // Use 'any' for compatibility with both Node and browser
+  private rideSimulations: Record<string, any> = {};
+
   // Get available vehicle types
   async getVehicleTypes(): Promise<VehicleType[]> {
     try {
@@ -286,53 +339,17 @@ class RideService {
   // Accept a ride offer (for passenger)
   async acceptRideOffer(rideId: string, offerId: string): Promise<boolean> {
     try {
-      console.log('RideService: Accepting offer:', { rideId, offerId });
-      
-      // Try different endpoint patterns
-      let response;
-      
-      // Pattern 1: PATCH with status update
-      try {
-        response = await apiClient.patch(`/rides/${rideId}/offers/${offerId}`, {
-          status: 'accepted'
+      console.log('RideService: Accepting offer via WebSocket:', { rideId, offerId });
+      return await new Promise((resolve, reject) => {
+        webSocketService.emit('acceptRideOffer', { rideOfferId: offerId });
+        webSocketService.on('acceptRideOffer', (response) => {
+          if (response && response.code === 201) {
+            resolve(true);
+          } else {
+            resolve(false);
+          }
         });
-        console.log('RideService: Accept offer response (pattern 1):', response.data);
-        return response.data.statusCode === 200;
-      } catch (error: any) {
-        console.log('RideService: Pattern 1 failed:', error.response?.status);
-      }
-      
-      // Pattern 2: POST to accept endpoint
-      try {
-        response = await apiClient.post(`/rides/${rideId}/offers/${offerId}/accept`);
-        console.log('RideService: Accept offer response (pattern 2):', response.data);
-        return response.data.statusCode === 200;
-      } catch (error: any) {
-        console.log('RideService: Pattern 2 failed:', error.response?.status);
-      }
-      
-      // Pattern 3: PATCH to accept endpoint
-      try {
-        response = await apiClient.patch(`/rides/${rideId}/offers/${offerId}/accept`);
-        console.log('RideService: Accept offer response (pattern 3):', response.data);
-        return response.data.statusCode === 200;
-      } catch (error: any) {
-        console.log('RideService: Pattern 3 failed:', error.response?.status);
-      }
-      
-      // Pattern 4: Accept through ride endpoint
-      try {
-        response = await apiClient.patch(`/rides/${rideId}/accept-offer`, {
-          offerId: offerId
-        });
-        console.log('RideService: Accept offer response (pattern 4):', response.data);
-        return response.data.statusCode === 200;
-      } catch (error: any) {
-        console.log('RideService: Pattern 4 failed:', error.response?.status);
-      }
-      
-      console.error('RideService: All accept offer patterns failed');
-      return false;
+      });
     } catch (error: any) {
       console.error('RideService: Error accepting ride offer:', error);
       return false;
@@ -417,49 +434,90 @@ class RideService {
     }
   }
 
-  // Cancel ride - NOTE: Not in API documentation
-  async cancelRide(rideId: string): Promise<boolean> {
-    try {
-      const response = await apiClient.patch(`/rides/${rideId}/cancel`);
-      return response.data.statusCode === 200;
-    } catch (error) {
-      console.error('Error cancelling ride:', error);
-      return false;
-    }
-  }
-
-  // Start ride (for driver) - NOTE: Not in API documentation
-  async startRide(rideId: string): Promise<boolean> {
-    try {
-      const response = await apiClient.patch(`/rides/${rideId}/start`);
-      return response.data.statusCode === 200;
-    } catch (error) {
-      console.error('Error starting ride:', error);
-      return false;
-    }
-  }
-
-  // Complete ride (for driver) - NOTE: Not in API documentation
-  async completeRide(rideId: string): Promise<boolean> {
-    try {
-      const response = await apiClient.patch(`/rides/${rideId}/complete`);
-      return response.data.statusCode === 200;
-    } catch (error) {
-      console.error('Error completing ride:', error);
-      return false;
-    }
-  }
-
-  // Get ride details - NOTE: Not in API documentation
+  // Get ride details - Use WebSocket instead of REST API
   async getRideDetails(rideId: string): Promise<Ride | null> {
     try {
+      // For completed rides, use REST API instead of WebSocket
+      console.log('RideService: Getting ride details via REST API for rideId:', rideId);
+      
       const response = await apiClient.get(`/rides/${rideId}`);
+      console.log('RideService: REST API response:', response.data);
+      
+      if (response.data.statusCode === 200 && response.data.data) {
+        const ride = response.data.data;
+        console.log('RideService: Retrieved ride data:', ride);
+        
+        // Transform the response to match our Ride interface
+        return {
+          _id: ride._id,
+          passenger: {
+            _id: ride.passenger?._id || ride.passengerId || '',
+            firstName: ride.passenger?.firstName || '',
+            lastName: ride.passenger?.lastName || '',
+            mobile: ride.passenger?.mobile || '',
+          },
+          driver: ride.driver ? {
+            _id: ride.driver._id || '',
+            firstName: ride.driver.firstName || '',
+            lastName: ride.driver.lastName || '',
+            mobile: ride.driver.mobile || '',
+            rating: ride.driverProfile?.rating || ride.driver.rating || 0,
+          } : undefined,
+          vehicleType: {
+            _id: ride.vehicleType?._id || ride.vehicleType || '',
+            name: ride.vehicleType?.name || ride.vehicle?.name || '',
+            basePrice: ride.vehicleType?.basePrice || 0,
+            pricePerKm: ride.vehicleType?.pricePerKm || 0,
+          },
+          pickUpLocation: ride.pickUpLocation || ride.pickUp?.location || '',
+          pickUpLat: ride.pickUpLat || ride.pickUp?.coords?.coordinates?.[1] || 0,
+          pickUpLng: ride.pickUpLng || ride.pickUp?.coords?.coordinates?.[0] || 0,
+          dropOffLocation: ride.dropOffLocation || ride.dropOff?.location || '',
+          dropOffLat: ride.dropOffLat || ride.dropOff?.coords?.coordinates?.[1] || 0,
+          dropOffLng: ride.dropOffLng || ride.dropOff?.coords?.coordinates?.[0] || 0,
+          offerPrice: ride.offerPrice || 0,
+          status: ride.status?.toLowerCase() || 'completed',
+          comments: ride.comments,
+          createdAt: new Date(ride.createdAt),
+          updatedAt: new Date(ride.updatedAt || ride.createdAt),
+          // Include additional data for the ride details screen
+          estDistance: ride.estDistance,
+          driverProfile: ride.driverProfile,
+        };
+      }
+      
+      console.log('RideService: No ride data found or invalid response');
+      return null;
+    } catch (error) {
+      console.error('Error getting ride details:', error);
+      return null;
+    }
+  }
+
+  // Get ride details with driver information
+  async getRideWithDriverInfo(rideId: string): Promise<Ride | null> {
+    try {
+      const response = await apiClient.get(`/rides/${rideId}/driver-info`);
       if (response.data.statusCode === 200) {
         return response.data.data;
       }
       return null;
     } catch (error) {
-      console.error('Error getting ride details:', error);
+      console.error('Error getting ride with driver info:', error);
+      return null;
+    }
+  }
+
+  // Get driver information for a specific ride
+  async getRideDriverInfo(rideId: string): Promise<any> {
+    try {
+      const response = await apiClient.get(`/rides/${rideId}/driver-info`);
+      if (response.data.statusCode === 200) {
+        return response.data.data;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting ride driver info:', error);
       return null;
     }
   }
@@ -496,59 +554,6 @@ class RideService {
     return Math.round(estimatedFare * 100) / 100; // Round to 2 decimal places
   }
 
-  // Get all pending rides (for drivers to see available rides)
-  async getAllPendingRides(): Promise<Ride[]> {
-    try {
-      console.log('RideService: Calling /rides/available endpoint...');
-      console.log('RideService: Auth header:', apiClient.defaults.headers.Authorization);
-      
-      const response = await apiClient.get('/rides/available');
-      console.log('RideService: API response:', response.data);
-      
-      if (response.data.statusCode === 200) {
-        // Transform the backend response to match our Ride interface
-        const transformedRides = response.data.data.map((ride: any) => ({
-          _id: ride._id,
-          passenger: {
-            _id: ride.passenger._id,
-            firstName: ride.passenger.firstName,
-            lastName: ride.passenger.lastName,
-            mobile: ride.passenger.mobile,
-          },
-          vehicleType: {
-            _id: ride.vehicle._id,
-            name: ride.vehicle.name,
-            basePrice: 0, // Not provided in new API
-            pricePerKm: 0, // Not provided in new API
-          },
-          pickUpLocation: ride.pickUp.location,
-          pickUpLat: ride.pickUp.coords.coordinates[1], // Latitude is second coordinate
-          pickUpLng: ride.pickUp.coords.coordinates[0], // Longitude is first coordinate
-          dropOffLocation: ride.dropOff.location,
-          dropOffLat: ride.dropOff.coords.coordinates[1],
-          dropOffLng: ride.dropOff.coords.coordinates[0],
-          offerPrice: ride.offerPrice,
-          status: ride.status.toLowerCase(),
-          comments: ride.comments,
-          createdAt: new Date(ride.createdAt),
-          updatedAt: new Date(ride.createdAt),
-        }));
-        
-        console.log('RideService: Transformed rides:', transformedRides);
-        return transformedRides;
-      }
-      console.log('RideService: No rides found or invalid response');
-      return [];
-    } catch (error: any) {
-      console.error('RideService: Error getting available rides:', error);
-      if (error.response) {
-        console.error('RideService: Error response:', error.response.data);
-        console.error('RideService: Error status:', error.response.status);
-      }
-      return [];
-    }
-  }
-
   // Make a ride offer (for drivers)
   async makeRideOffer(rideId: string, offeredPrice: number, message?: string): Promise<RideOffer | null> {
     try {
@@ -583,6 +588,246 @@ class RideService {
       console.error('Error making ride offer:', error);
       throw error;
     }
+  }
+
+  // Start ride (for driver) - Use WebSocket instead of REST API
+  async startRide(rideId: string): Promise<boolean> {
+    try {
+      // Connect to RIDE namespace for ride-specific events
+      if (!webSocketService.isSocketConnected('ride')) {
+        await webSocketService.connect(rideId, 'ride');
+      }
+      
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          webSocketService.off('rideStarted', handleRideStarted, 'ride');
+          console.error('WebSocket: Timeout starting ride for rideId:', rideId);
+          reject(new Error('Timeout starting ride'));
+        }, 10000);
+
+        // Listen for ride started response
+        const handleRideStarted = (data: any) => {
+          clearTimeout(timeout);
+          webSocketService.off('rideStarted', handleRideStarted, 'ride');
+          console.log('WebSocket: Received ride started event:', data);
+          if (data && data.code === 201) {
+            resolve(true);
+          } else {
+            console.error('WebSocket: Failed to start ride - invalid response:', data);
+            resolve(false);
+          }
+        };
+
+        webSocketService.on('rideStarted', handleRideStarted, 'ride');
+        
+        // Start ride via WebSocket
+        console.log('WebSocket: Starting ride for rideId:', rideId);
+        webSocketService.emitEvent('startRide', {}, (response: any) => {
+          clearTimeout(timeout);
+          webSocketService.off('rideStarted', handleRideStarted, 'ride');
+          console.log('WebSocket: startRide callback response:', response);
+          if (response && response.code === 201) {
+            resolve(true);
+          } else {
+            console.error('WebSocket: Failed to start ride - callback error:', response);
+            resolve(false);
+          }
+        }, 'ride');
+      });
+    } catch (error) {
+      console.error('Error starting ride:', error);
+      return false;
+    }
+  }
+
+  // Complete ride (for driver) - Use WebSocket instead of REST API
+  async completeRide(rideId: string): Promise<boolean> {
+    try {
+      // Connect to RIDE namespace for ride-specific events
+      if (!webSocketService.isSocketConnected('ride')) {
+        await webSocketService.connect(rideId, 'ride');
+      }
+      
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          webSocketService.off('rideCompleted', handleRideCompleted, 'ride');
+          reject(new Error('Timeout completing ride'));
+        }, 10000);
+
+        // Listen for ride completed response
+        const handleRideCompleted = (data: any) => {
+          clearTimeout(timeout);
+          webSocketService.off('rideCompleted', handleRideCompleted, 'ride');
+          console.log('WebSocket: Received ride completed event:', data);
+          if (data && data.code === 201) {
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        };
+
+        webSocketService.on('rideCompleted', handleRideCompleted, 'ride');
+        
+        // Complete ride via WebSocket
+        console.log('WebSocket: Completing ride for rideId:', rideId);
+        webSocketService.emitEvent('endRide', {}, (response: any) => {
+          clearTimeout(timeout);
+          webSocketService.off('rideCompleted', handleRideCompleted, 'ride');
+          console.log('WebSocket: endRide callback response:', response);
+          if (response && response.code === 201) {
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        }, 'ride');
+      });
+    } catch (error) {
+      console.error('Error completing ride:', error);
+      return false;
+    }
+  }
+
+  // Cancel ride - Use WebSocket instead of REST API
+  async cancelRide(rideId: string, cancellationReason?: string): Promise<boolean> {
+    try {
+      // Connect to WebSocket if not already connected
+      if (!webSocketService.isSocketConnected('ride')) {
+        await webSocketService.connect(rideId, 'ride');
+      }
+      
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Timeout cancelling ride'));
+        }, 10000);
+
+        // Listen for ride cancelled response
+        const handleRideCancelled = (data: any) => {
+          clearTimeout(timeout);
+          if (data && data.code === 201) {
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        };
+
+        webSocketService.on('rideCancelled', handleRideCancelled, 'ride');
+        
+        // Cancel ride via WebSocket
+        const payload = {
+          rideId,
+          cancellationReason: cancellationReason || 'Cancelled by user'
+        };
+        webSocketService.emitEvent('cancelRide', payload, (response: any) => {
+          clearTimeout(timeout);
+          webSocketService.off('rideCancelled', handleRideCancelled, 'ride');
+          if (response && response.code === 201) {
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        }, 'ride');
+      });
+    } catch (error) {
+      console.error('Error cancelling ride:', error);
+      return false;
+    }
+  }
+
+  // Start simulated ride progress
+  startRideProgressSimulation(rideId: string, locations: Array<{ lat: number; lng: number }>, durationSeconds: number) {
+    if (this.rideSimulations[rideId]) {
+      console.warn(`[rideService] Simulation already running for rideId ${rideId}`);
+      return;
+    }
+    if (!locations || locations.length < 3) {
+      console.error('[rideService] Need at least 3 locations (current, pickup, dropoff)');
+      return;
+    }
+    const [start, pickup, dropoff] = locations;
+    const startTime = Date.now();
+    const endTime = startTime + durationSeconds * 1000;
+    let lastProgress = 0;
+    let completed = false;
+
+    function interpolate(a: { lat: number; lng: number }, b: { lat: number; lng: number }, t: number) {
+      return {
+        lat: a.lat + (b.lat - a.lat) * t,
+        lng: a.lng + (b.lng - a.lng) * t,
+      };
+    }
+
+    this.rideSimulations[rideId] = setInterval(async () => {
+      if (completed) return;
+      const now = Date.now();
+      let progress = Math.min(100, ((now - startTime) / (endTime - startTime)) * 100);
+      let currentLocation;
+      if (progress < 25) {
+        // From start to pickup
+        const t = progress / 25;
+        currentLocation = interpolate(start, pickup, t);
+      } else if (progress < 90) {
+        // From pickup to dropoff
+        const t = (progress - 25) / (90 - 25);
+        currentLocation = interpolate(pickup, dropoff, t);
+      } else {
+        // Final approach to dropoff
+        const t = (progress - 90) / (100 - 90);
+        currentLocation = interpolate(pickup, dropoff, 1 * t + (1 - t));
+      }
+      lastProgress = progress;
+      const event = {
+        rideId,
+        progress,
+        currentLocation,
+        timestamp: now,
+      };
+      try {
+        // Emit to ride namespace
+        const ws = require('./websocketService').default;
+        ws.emitEvent('rideProgressUpdate', event, undefined, 'ride');
+        console.log(`[rideService] Emitted rideProgressUpdate for rideId ${rideId}:`, event);
+      } catch (err) {
+        console.error('[rideService] Error emitting rideProgressUpdate:', err);
+      }
+      if (progress >= 100) {
+        completed = true;
+        this.stopRideProgressSimulation(rideId);
+        // Optionally, emit endRide event
+        try {
+          const ws = require('./websocketService').default;
+          ws.emitEvent('endRide', { rideId }, undefined, 'ride');
+          console.log(`[rideService] Emitted endRide for rideId ${rideId}`);
+        } catch (err) {
+          console.error('[rideService] Error emitting endRide:', err);
+        }
+      }
+    }, 2000);
+  }
+
+  // Stop ride progress simulation
+  stopRideProgressSimulation(rideId: string) {
+    if (this.rideSimulations[rideId]) {
+      clearInterval(this.rideSimulations[rideId]);
+      delete this.rideSimulations[rideId];
+      console.log(`[rideService] Stopped simulation for rideId ${rideId}`);
+    }
+  }
+
+  // Get current ride progress
+  getRideProgress(rideId: string) {
+    return this.rideProgressSimulation[rideId] || null;
+  }
+
+  // Interpolate location between two points
+  private interpolateLocation(
+    start: { lat: number; lng: number },
+    end: { lat: number; lng: number },
+    factor: number
+  ): { lat: number; lng: number } {
+    return {
+      lat: start.lat + (end.lat - start.lat) * factor,
+      lng: start.lng + (end.lng - start.lng) * factor,
+    };
   }
 }
 

@@ -13,6 +13,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import Toast from '../../components/ui/Toast';
 import { rideService, RideOffer } from '../utils/rideService';
+import webSocketService from '../utils/websocketService';
+import { useUserRole } from '../utils/userRoleManager';
+import { userRoleManager } from '../utils/userRoleManager';
 
 const { width, height } = Dimensions.get('window');
 
@@ -26,9 +29,15 @@ const RideOffersScreen = () => {
   const fare = params.fare as string;
   const vehicle = params.vehicle as string;
 
+  // Get current user role from global manager
+  const userRole = useUserRole();
+
   const [offers, setOffers] = useState<RideOffer[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [newOffer, setNewOffer] = useState<any>(null);
+  const [acceptLoading, setAcceptLoading] = useState<{ [key: string]: boolean }>({});
+  const [rejectLoading, setRejectLoading] = useState<{ [key: string]: boolean }>({});
   const [selectedOffer, setSelectedOffer] = useState<RideOffer | null>(null);
   const [processing, setProcessing] = useState(false);
   const [toast, setToast] = useState<{
@@ -51,18 +60,39 @@ const RideOffersScreen = () => {
 
   useEffect(() => {
     loadOffers();
+    setupWebSocket();
+    
+    return () => {
+      // Cleanup WebSocket connection
+      webSocketService.disconnect();
+    };
   }, [rideId]);
 
   const loadOffers = async () => {
     try {
       setLoading(true);
       console.log('RideOffers: Loading offers for rideId:', rideId);
-      const rideOffers = await rideService.getRideOffers(rideId);
-      console.log('RideOffers: Received offers:', rideOffers);
-      setOffers(rideOffers);
+      
+      // First try WebSocket
+      try {
+        if (webSocketService.isSocketConnected()) {
+          console.log('RideOffers: Using WebSocket for offers...');
+          // WebSocket method would be implemented here
+          // For now, fall back to REST API
+        }
+      } catch (wsError) {
+        console.log('RideOffers: WebSocket failed, using REST API...');
+      }
+      
+      // Use REST API to get offers
+      const offers = await rideService.getRideOffersForPassenger(rideId);
+      console.log('RideOffers: Received offers:', offers);
+      setOffers(offers);
+      
     } catch (error) {
       console.error('RideOffers: Error loading offers:', error);
-      showToast('Error loading offers', 'error');
+      showToast('Failed to load ride offers', 'error');
+      setOffers([]);
     } finally {
       setLoading(false);
     }
@@ -74,78 +104,112 @@ const RideOffersScreen = () => {
     setRefreshing(false);
   };
 
-  const handleAcceptOffer = async (offer: RideOffer) => {
-    setSelectedOffer(offer);
-    setProcessing(true);
-    showToast('Accepting offer...', 'info');
-
+  const handleAcceptOffer = async (offerId: string) => {
     try {
-      console.log('RideOffers: Accepting offer:', {
-        rideId,
-        offerId: offer._id,
-        offer: offer
-      });
+      setAcceptLoading(prev => ({ ...prev, [offerId]: true }));
+      setLoading(true);
+      // Connect to RIDE namespace for ride-specific events
+      await webSocketService.connect(rideId, 'ride');
+      webSocketService.emit('acceptRideOffer', { rideOfferId: offerId }, 'ride');
+      showToast('Offer accepted! Waiting for confirmation...', 'info');
+      // Do NOT reload offers or navigate here!
+    } catch (error) {
+      console.error('Error accepting offer:', error);
+      showToast('Error accepting offer. Please try again.', 'error');
+    } finally {
+      setAcceptLoading(prev => ({ ...prev, [offerId]: false }));
+      setLoading(false);
+    }
+  };
+
+  const handleRejectOffer = async (offerId: string) => {
+    try {
+      setRejectLoading(prev => ({ ...prev, [offerId]: true }));
+      setLoading(true);
+      // Connect to RIDE namespace for ride-specific events
+      await webSocketService.connect(rideId, 'ride');
+      webSocketService.emit('rejectRideOffer', { rideOfferId: offerId }, 'ride');
+      showToast('Offer rejected! Waiting for confirmation...', 'info');
+      // Do NOT reload offers or navigate here!
+    } catch (error) {
+      console.error('Error rejecting offer:', error);
+      showToast('Error rejecting offer. Please try again.', 'error');
+    } finally {
+      setRejectLoading(prev => ({ ...prev, [offerId]: false }));
+      setLoading(false);
+    }
+  };
+
+  const setupWebSocket = async () => {
+    try {
+      // Connect to passenger namespace for passenger-specific events
+      await webSocketService.connect(undefined, 'passenger');
+      // Connect to ride namespace for ride-specific events
+      await webSocketService.connect(rideId, 'ride');
       
-      const success = await rideService.acceptRideOffer(rideId, offer._id);
-      console.log('RideOffers: Accept offer result:', success);
+      let isMounted = true;
+      let newOfferListener: any;
+      let rideAcceptedListener: any;
       
-      if (success) {
-        showToast('Offer accepted! Driver is on the way', 'success');
-        setTimeout(() => {
+      // Listen for new offers (passenger namespace)
+      newOfferListener = (data: any) => {
+        if (!isMounted) return;
+        console.log('RideOffers: New offer received:', data);
+        if (data && data.rideId) {
+          setNewOffer(data);
+          showToast('New ride offer received!', 'info');
+        }
+      };
+      webSocketService.on('newOffer', newOfferListener, 'passenger');
+      
+      // Listen for ride accepted (ride namespace)
+      rideAcceptedListener = async (data: any) => {
+        console.log('RideOffers: rideAccepted event received:', data);
+        if (data && data.data && data.data.acceptedOffer) {
+          // Update offers list in state
+          setOffers(prev =>
+            prev.map(offer =>
+              offer._id === data.data.acceptedOffer._id
+                ? { ...offer, status: 'accepted' }
+                : offer
+            )
+          );
+          // Only navigate if the accepted offer belongs to the current user (passenger)
+          // (Assuming you have access to the current user/passenger ID)
+          // If you want to restrict navigation to only the passenger who accepted, add a check here
+          await userRoleManager.setRole('passenger');
           router.push({
-            pathname: '/rideTracker',
+            pathname: '../(common)/rideTracker',
             params: {
-              rideId,
-              driverName: `${offer.driver.firstName} ${offer.driver.lastName}`,
-              from,
-              to,
-              fare: offer.offeredPrice.toString(),
-              vehicle,
-              rideInProgress: 'true',
-              progress: '0',
+              rideId: data.data.id,
+              driverName: data.data.driver?.firstName + ' ' + data.data.driver?.lastName,
+              from: data.data.pickUp?.location,
+              to: data.data.dropOff?.location,
+              fare: data.data.offerPrice,
+              vehicle: data.data.vehicle?.name,
             },
           });
-        }, 1500);
-      } else {
-        showToast('Failed to accept offer', 'error');
-      }
+        } else if (data && data.code && data.code !== 201) {
+          // Show error toast if backend returns an error
+          showToast(data.message || 'Failed to accept offer. Please try again.', 'error');
+        }
+      };
+      webSocketService.on('rideAccepted', rideAcceptedListener, 'ride');
+      
+      // Cleanup function
+      return () => {
+        isMounted = false;
+        if (newOfferListener) webSocketService.off('newOffer', newOfferListener, 'passenger');
+        if (rideAcceptedListener) webSocketService.off('rideAccepted', rideAcceptedListener, 'ride');
+      };
+      
     } catch (error) {
-      console.error('RideOffers: Error accepting offer:', error);
-      showToast('Error accepting offer', 'error');
-    } finally {
-      setProcessing(false);
-      setSelectedOffer(null);
+      console.error('RideOffers: WebSocket setup failed:', error);
     }
   };
 
-  const handleRejectOffer = async (offer: RideOffer) => {
-    setProcessing(true);
-    showToast('Rejecting offer...', 'info');
-
-    try {
-      console.log('RideOffers: Rejecting offer:', {
-        rideId,
-        offerId: offer._id,
-        offer: offer
-      });
-      
-      const success = await rideService.rejectRideOffer(rideId, offer._id);
-      console.log('RideOffers: Reject offer result:', success);
-      
-      if (success) {
-        showToast('Offer rejected', 'info');
-        // Remove the rejected offer from the list
-        setOffers(prev => prev.filter(o => o._id !== offer._id));
-      } else {
-        showToast('Failed to reject offer', 'error');
-      }
-    } catch (error) {
-      console.error('RideOffers: Error rejecting offer:', error);
-      showToast('Error rejecting offer', 'error');
-    } finally {
-      setProcessing(false);
-    }
-  };
+  console.log('All offer statuses:', offers.map(o => o.status));
+  const filteredOffers = offers.filter(o => ['submitted', 'pending', 'accepted'].includes(String(o.status)));
 
   const renderOffer = ({ item }: { item: RideOffer }) => (
     <View style={styles.offerCard}>
@@ -183,7 +247,7 @@ const RideOffersScreen = () => {
       <View style={styles.offerActions}>
         <TouchableOpacity
           style={[styles.actionButton, styles.rejectButton]}
-          onPress={() => handleRejectOffer(item)}
+          onPress={() => handleRejectOffer(item._id)}
           disabled={processing}
         >
           <MaterialIcons name="close" size={20} color="#EA2F14" />
@@ -192,7 +256,7 @@ const RideOffersScreen = () => {
         
         <TouchableOpacity
           style={[styles.actionButton, styles.acceptButton]}
-          onPress={() => handleAcceptOffer(item)}
+          onPress={() => handleAcceptOffer(item._id)}
           disabled={processing}
         >
           <MaterialIcons name="check" size={20} color="#fff" />
@@ -252,7 +316,7 @@ const RideOffersScreen = () => {
         </View>
       ) : (
         <FlatList
-          data={offers}
+          data={filteredOffers}
           renderItem={renderOffer}
           keyExtractor={(item) => item._id}
           contentContainerStyle={styles.offersList}
@@ -279,6 +343,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
   },
   header: {
+    marginTop: 33,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

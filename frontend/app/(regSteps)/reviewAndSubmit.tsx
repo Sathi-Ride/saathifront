@@ -119,7 +119,7 @@ const ReviewAndSubmit = () => {
       });
 
       // Set user role to driver and navigate to home screen
-      userRoleManager.setRole('driver');
+      await userRoleManager.setRole('driver');
       
       showToast('Driver profile created successfully! 🎉', 'success');
       

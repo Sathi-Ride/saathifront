@@ -15,12 +15,16 @@ import {
 import Icon from "react-native-vector-icons/MaterialIcons"
 import { useRouter, useLocalSearchParams } from "expo-router"
 import Toast from "../../components/ui/Toast"
+import { userRoleManager, useUserRole } from "../utils/userRoleManager"
 
 const { width, height } = Dimensions.get("window")
 
 const DriverSelectionScreen = () => {
   const { from, to, fare, vehicle } = useLocalSearchParams()
   const router = useRouter()
+
+  // Get current user role from global manager
+  const userRole = useUserRole();
 
   type Driver = {
     id: string
@@ -154,10 +158,20 @@ const DriverSelectionScreen = () => {
       setDriverResponse(null)
       showToast('Ride confirmed!', 'success');
       setTimeout(() => {
+        // Use selectedDriver or another ride object as appropriate
+        if (selectedDriver) {
         router.push({
-          pathname: "/rideTracker",
-          params: { driverName: bargainingDriver.name, from, to, fare: finalFare.toFixed(2), vehicle },
-        })
+          pathname: "../(common)/rideTracker",
+          params: { 
+              rideId: selectedDriver.id,
+              driverName: selectedDriver.name,
+              from: from, // or another variable holding pickup location
+              to: to,     // or another variable holding dropoff location
+              fare: selectedDriver.baseFare,
+              vehicle: selectedDriver.vehicleModel,
+          },
+          });
+        }
       }, 1500);
     }
   }

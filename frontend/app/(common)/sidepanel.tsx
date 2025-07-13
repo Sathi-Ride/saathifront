@@ -5,6 +5,8 @@ import { useRef, useEffect } from "react"
 import { View, Text, TouchableOpacity, StyleSheet, Animated, Dimensions } from "react-native"
 import Icon from "react-native-vector-icons/MaterialIcons"
 import { useRouter } from "expo-router"
+import { userRoleManager } from '../utils/userRoleManager';
+import webSocketService from '../utils/websocketService';
 
 const { width } = Dimensions.get("window")
 
@@ -60,20 +62,23 @@ const SidePanel: React.FC<SidePanelProps> = ({ visible, onClose, role, rideInPro
     onClose()
   }
 
-  const handleChangeRole = () => {
+  const handleChangeRole = async () => {
     if (!rideInProgress) {
-      const newRole = role === "driver" ? "passenger" : "driver"
-      onChangeRole(newRole)
+      const newRole = role === "driver" ? "passenger" : "driver";
+      await userRoleManager.setRole(newRole);
+      webSocketService.disconnect('driver');
+      webSocketService.disconnect('passenger');
+      webSocketService.disconnect('ride');
       if (newRole === "driver") {
-        router.push("/(driver)")
+        router.push("/(driver)");
       } else {
-        router.push("/(tabs)")
+        router.push("/(tabs)");
       }
-      onClose()
+      onClose();
     } else {
-      alert("Cannot change role during an active ride.")
+      alert("Cannot change role during an active ride.");
     }
-  }
+  };
 
   const menuItems =
     role === "driver"

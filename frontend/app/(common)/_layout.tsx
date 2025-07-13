@@ -10,7 +10,9 @@ export default function CommonLayout() {
       <Stack.Screen name="sidepanel" options={{ headerShown: false }} />
       <Stack.Screen name="notifications" options={{ headerShown: false }} />
       <Stack.Screen name="support" options={{ headerShown: false }} />
+      <Stack.Screen name="messaging" options={{ headerShown: false }} />
       <Stack.Screen name="rideDetails" options={{ headerShown: false }} />
+      <Stack.Screen name="rideTracker" options={{ headerShown: false }} />
     </Stack>
     );
 }

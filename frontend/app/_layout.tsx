@@ -4,23 +4,31 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { DriverRegistrationProvider } from './DriverRegistrationContext';
 import { initializeApiClient } from './utils/apiClient';
+import { userRoleManager } from './utils/userRoleManager';
+import { View, ActivityIndicator } from 'react-native';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
+  const [roleReady, setRoleReady] = useState(false);
 
   useEffect(() => {
-    // Initialize API client with stored token
     initializeApiClient();
+    userRoleManager.init().then(() => setRoleReady(true));
   }, []);
 
-  if (!loaded) {
-    return null;
+  if (!loaded || !roleReady) {
+    // Show a centered loading spinner while initializing
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#075B5E" />
+      </View>
+    );
   }
 
   return (

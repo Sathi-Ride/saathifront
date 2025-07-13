@@ -4,12 +4,14 @@ import { useState, useEffect } from "react"
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ActivityIndicator, StatusBar } from "react-native"
 import { TextInput } from "react-native-paper"
 import Icon from "react-native-vector-icons/MaterialIcons"
+import * as Location from 'expo-location'
 import { useRouter, useLocalSearchParams } from "expo-router"
 import SidePanel from "../(common)/sidepanel"
 import Toast from "../../components/ui/Toast"
 import LocationSearch from "../../components/LocationSearch"
 import { locationService, LocationData, GoogleMapsPlace } from "../utils/locationService"
 import { rideService, VehicleType, RideRequest } from "../utils/rideService"
+import { userRoleManager, useUserRole } from "../utils/userRoleManager"
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps'
 import MaterialIcons from "react-native-vector-icons/MaterialIcons"
 
@@ -18,6 +20,9 @@ const { width, height } = Dimensions.get("window")
 const PassengerHomeScreen = () => {
   const { rideInProgress, driverName, from, to, fare, vehicle, progress: initialProgress } = useLocalSearchParams()
   const getString = (val: string | string[] | undefined) => (Array.isArray(val) ? (val[0] ?? "") : (val ?? ""))
+
+  // Get current user role from global manager
+  const userRole = useUserRole();
 
   // Real state management
   const [currentLocation, setCurrentLocation] = useState<LocationData | null>(null)
@@ -71,9 +76,14 @@ const PassengerHomeScreen = () => {
         setSelectedVehicleType(types[0]); // Set first vehicle type as default
       }
 
-      // Start location tracking
+      // Start location tracking for passenger
       await locationService.startLocationTracking((newLocation) => {
         setCurrentLocation(newLocation);
+      }, {
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 30000,
+        distanceInterval: 50,
+        role: 'passenger'
       });
 
     } catch (error) {
@@ -296,8 +306,9 @@ const PassengerHomeScreen = () => {
 
   const openRideTracking = () => {
     router.push({
-      pathname: "/rideTracker",
+      pathname: "../(common)/rideTracker",
       params: {
+        // rideId: ride._id, // Removed because 'ride' is not defined here
         driverName: localDriverName,
         from: pickupLocation,
         to: destinationLocation,
