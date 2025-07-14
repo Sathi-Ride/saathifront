@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import * as ImagePicker from 'expo-image-picker';
 import { useDriverRegistration } from '../DriverRegistrationContext';
+import AppModal from '../../components/ui/AppModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -13,6 +14,22 @@ const Billbook = () => {
   const [regPhoto, setRegPhoto] = useState<string | null>(registrationData.blueBookFrontImgPath || null);
   const [descPhoto, setDescPhoto] = useState<string | null>(registrationData.blueBookBackImgPath || null);
   const [billbookNumber, setBillbookNumber] = useState(registrationData.billbookNumber || '');
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'info';
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
+
+  const showModal = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    setModal({ visible: true, type, title, message });
+  };
+  const hideModal = () => setModal((prev) => ({ ...prev, visible: false }));
 
   const handleBack = () => {
     router.back();
@@ -21,7 +38,7 @@ const Billbook = () => {
   const handleAddPhoto = async (setPhoto: React.Dispatch<React.SetStateAction<string | null>>) => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permissionResult.granted === false) {
-      Alert.alert("Permission required", "You need to allow access to your photos to upload an image.");
+      showModal('info', 'Permission required', 'You need to allow access to your photos to upload an image.');
       return;
     }
 
@@ -41,7 +58,7 @@ const Billbook = () => {
 
   const handleDone = () => {
     if (!regPhoto || !descPhoto || !billbookNumber.trim()) {
-      Alert.alert('Error', 'Please upload both billbook photos and enter the billbook number');
+      showModal('error', 'Error', 'Please upload both billbook photos and enter the billbook number');
       return;
     }
     updateRegistrationData({
@@ -119,6 +136,13 @@ const Billbook = () => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <AppModal
+        visible={modal.visible}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        onClose={hideModal}
+      />
     </View>
   );
 };
@@ -138,6 +162,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
     backgroundColor: '#fff',
+    marginTop:30,
   },
   headerTitle: {
     fontSize: 20,
@@ -202,7 +227,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   addButton: {
-    backgroundColor: '#535C91',
+    backgroundColor: '#3D74B6',
     borderRadius: 20,
     paddingVertical: 10,
     paddingHorizontal: 20,

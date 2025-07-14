@@ -3,10 +3,17 @@
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity, StatusBar, ScrollView, Alert, ActivityIndicator, Image } from "react-native"
 import MapView, { Marker, Polyline } from 'react-native-maps'
 import Icon from "react-native-vector-icons/MaterialIcons"
+import ProfileImage from '../../components/ProfileImage';
 import { useRouter, useLocalSearchParams } from "expo-router"
 import { useState, useEffect } from "react"
 import { rideService } from '../utils/rideService'
 import { useUserRole } from '../utils/userRoleManager'
+import AppModal from '../../components/ui/AppModal';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import Toast from '../../components/ui/Toast';
+import { emitRideRemoved } from './rideHistory';
+import { userRoleManager } from '../utils/userRoleManager';
 
 const { width, height } = Dimensions.get("window")
 
@@ -92,6 +99,35 @@ const RideDetailsScreen = () => {
   const [rideDetails, setRideDetails] = useState<RideDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'info';
+    title: string;
+    message: string;
+    actionText?: string;
+    onAction?: (() => void);
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+    actionText: undefined,
+    onAction: undefined,
+  });
+  const [receiptModal, setReceiptModal] = useState<{ visible: boolean; type: 'success' | 'error' | 'info'; title: string; message: string; loading?: boolean }>({ visible: false, type: 'info', title: '', message: '', loading: false });
+
+
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({ visible: false, message: '', type: 'info' });
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => setToast({ visible: true, message, type });
+  const hideToast = () => setToast(prev => ({ ...prev, visible: false }));
+
+  const showModal = (type: 'success' | 'error' | 'info', title: string, message: string, actionText?: string, onAction?: (() => void)) => {
+    setModal({ visible: true, type, title, message, actionText, onAction });
+  };
+  const hideModal = () => setModal((prev) => ({ ...prev, visible: false }));
+
+  const showReceiptModal = (type: 'success' | 'error' | 'info', title: string, message: string, loading = false) => setReceiptModal({ visible: true, type, title, message, loading });
+  const hideReceiptModal = () => setReceiptModal(prev => ({ ...prev, visible: false, loading: false }));
 
   useEffect(() => {
     const fetchRideDetails = async () => {
@@ -300,16 +336,61 @@ const RideDetailsScreen = () => {
   const rideDate = getRideDate()
   const times = getTimes()
 
-  const handleReceipt = () => {
-    Alert.alert("Receipt", "Generating PDF receipt...", [
-      {
-        text: "OK",
-        onPress: () => {
-          console.log("PDF receipt for ride:", rideDetails)
-        },
-      },
-    ])
-  }
+  const handleReceipt = async () => {
+    showReceiptModal('info', 'Generating Receipt', 'Please wait while we generate your PDF receipt...', true);
+    try {
+      const locations = getLocations();
+      const personName = getPersonName();
+      const vehicleInfo = getVehicleInfo();
+      const html = `
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+              body { font-family: 'Arial', sans-serif; margin: 0; padding: 24px; background: #fff; color: #222; }
+              .header { text-align: center; margin-bottom: 24px; }
+              .title { font-size: 22px; font-weight: bold; margin-bottom: 8px; }
+              .subtitle { font-size: 16px; color: #666; margin-bottom: 16px; }
+              .section { margin-bottom: 18px; }
+              .row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+              .label { color: #888; font-size: 14px; }
+              .value { font-weight: 500; font-size: 15px; }
+              .fare { font-size: 20px; font-weight: bold; color: #075B5E; margin-top: 16px; }
+              .footer { text-align: center; color: #aaa; font-size: 12px; margin-top: 32px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <div class="title">Saathi Ride Receipt</div>
+              <div class="subtitle">${getRideDate()}</div>
+            </div>
+            <div class="section">
+              <div class="row"><span class="label">From</span><span class="value">${locations.from}</span></div>
+              <div class="row"><span class="label">To</span><span class="value">${locations.to}</span></div>
+              <div class="row"><span class="label">Distance</span><span class="value">${getDistanceDuration().distance}</span></div>
+              <div class="row"><span class="label">Duration</span><span class="value">${getDistanceDuration().duration}</span></div>
+            </div>
+            <div class="section">
+              <div class="row"><span class="label">Passenger</span><span class="value">${rideDetails?.passenger ? rideDetails.passenger.firstName + ' ' + rideDetails.passenger.lastName : ''}</span></div>
+              <div class="row"><span class="label">Driver</span><span class="value">${rideDetails?.driver ? rideDetails.driver.firstName + ' ' + rideDetails.driver.lastName : ''}</span></div>
+              <div class="row"><span class="label">Vehicle</span><span class="value">${vehicleInfo.make} ${vehicleInfo.model} ${vehicleInfo.regNum}</span></div>
+            </div>
+            <div class="fare">Fare: Rs ${getFare().toFixed(2)}</div>
+            <div class="footer">Thank you for riding with Saathi!</div>
+          </body>
+        </html>
+      `;
+      const { uri } = await Print.printToFileAsync({ html });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Share your ride receipt' });
+        showReceiptModal('success', 'Receipt Shared', 'Your PDF receipt was shared successfully!', false);
+      } else {
+        showReceiptModal('success', 'Receipt Generated', 'PDF receipt generated and saved to your device.', false);
+      }
+    } catch (err) {
+      showReceiptModal('error', 'Receipt Error', 'Failed to generate receipt. Please try again.', false);
+    }
+  };
 
   const handleBackPress = () => {
     router.back();
@@ -343,18 +424,16 @@ const RideDetailsScreen = () => {
     })
   }
 
-  const handleRemoveFromHistory = () => {
-    Alert.alert("Remove from History", "Are you sure you want to remove this ride from your history?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: () => {
-          router.back()
-        },
-      },
-    ])
-  }
+  const handleRemoveFromHistory = async () => {
+    try {
+      await rideService.deleteRide(rideId);
+      emitRideRemoved(rideId);
+      showToast('Ride removed from history', 'success');
+      setTimeout(() => router.back(), 600);
+    } catch (err) {
+        showToast('Ride not removed from history', 'error')
+    }
+  };
 
   // Show loading state
   if (loading) {
@@ -469,20 +548,23 @@ const RideDetailsScreen = () => {
         </View>
 
         {/* Location Details */}
-        <View style={styles.locationSection}>
-          <View style={styles.locationRow}>
-            <View style={styles.blueDot} />
-            <View style={styles.locationInfo}>
-              <Text style={styles.locationName}>{locations.from}</Text>
-              <Text style={styles.locationTime}>{times.pickup}</Text>
-            </View>
+        {/* --- Vertical timeline for pickup/dropoff --- */}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginHorizontal: 16, marginVertical: 16 }}>
+          {/* Timeline dots and line */}
+          <View style={{ alignItems: 'center', width: 24 }}>
+            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#2196F3', marginBottom: 4 }} />
+            <View style={{ width: 2, height: 32, backgroundColor: '#B0BEC5' }} />
+            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#4CAF50', marginTop: 4 }} />
           </View>
-
-          <View style={styles.locationRow}>
-            <View style={styles.greenDot} />
-            <View style={styles.locationInfo}>
-              <Text style={styles.locationName}>{locations.to}</Text>
-              <Text style={styles.locationTime}>{times.dropoff}</Text>
+          {/* Location text */}
+          <View style={{ flex: 1, justifyContent: 'space-between', height: 60 }}>
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ fontSize: 16, fontWeight: '600', color: '#000' }}>{locations.from}</Text>
+              <Text style={{ fontSize: 14, color: '#666' }}>{times.pickup}</Text>
+            </View>
+            <View>
+              <Text style={{ fontSize: 16, fontWeight: '600', color: '#000' }}>{locations.to}</Text>
+              <Text style={{ fontSize: 14, color: '#666' }}>{times.dropoff}</Text>
             </View>
           </View>
         </View>
@@ -502,50 +584,34 @@ const RideDetailsScreen = () => {
         </View>
 
         {/* Driver/Passenger Info - Changes based on role */}
-        <View style={styles.personSection}>
-          <View style={[styles.personAvatar, isDriver && styles.driverAvatar]}>
-            {getPersonPhoto() ? (
-              <Image source={{ uri: getPersonPhoto()! }} style={styles.personImage} />
-            ) : (
-              <Icon name="person" size={24} color={isDriver ? "#075B5E" : "#fff"} />
-            )}
-          </View>
-          <View style={styles.personDetails}>
+        {/* --- Driver/Passenger info section --- */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 14, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 2, marginVertical: 8, marginHorizontal: 16, padding: 16 }}>
+          <ProfileImage
+            photoUrl={getPersonPhoto()}
+            size={60}
+            showBorder={true}
+            borderColor={isDriver ? '#075B5E' : '#fff'}
+            fallbackIconColor={isDriver ? '#075B5E' : '#fff'}
+            fallbackIconSize={24}
+          />
+          <View style={{ flex: 1, marginLeft: 16 }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: '#075B5E' }}>{getPersonName()}</Text>
             {isDriver ? (
-              <>
-                <Text style={styles.personName}>{getPersonName()}</Text>
-                <Text style={styles.personSubtext}>Passenger</Text>
-                {rideDetails?.passengerRating && (
-                  <View style={styles.ratingRow}>
-                    <Icon name="star" size={16} color="#FFD700" />
-                    <Text style={styles.ratingText}>{rideDetails.passengerRating.toFixed(1)}</Text>
-                  </View>
-                )}
-              </>
+              <Text style={{ fontSize: 14, color: '#666', marginBottom: 4 }}>Passenger</Text>
             ) : (
-              <>
-                <Text style={styles.personName}>{getPersonName()}</Text>
-                {getPersonName() === 'Driver Not Assigned' ? (
-                  <Text style={styles.personSubtext}>No driver was assigned to this ride</Text>
-                ) : (
-                  <>
-                    <Text style={styles.personSubtext}>
-                      {vehicleInfo.make} {vehicleInfo.model}
-                    </Text>
-                    <Text style={styles.personSubtext}>{vehicleInfo.regNum}</Text>
-                    <View style={styles.ratingRow}>
-                      <Icon name="star" size={16} color="#FFD700" />
-                      <Text style={styles.ratingText}>
-                        {vehicleInfo.rating > 0 ? vehicleInfo.rating.toFixed(1) : 'N/A'}
-                      </Text>
-                      {vehicleInfo.totalRides > 0 && (
-                        <Text style={styles.ratingText}> • {vehicleInfo.totalRides} rides</Text>
-                      )}
-                    </View>
-                  </>
-                )}
-              </>
+              <Text style={{ fontSize: 14, color: '#666', marginBottom: 4 }}>Driver</Text>
             )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+              <Icon name="directions-car" size={16} color="#075B5E" style={{ marginRight: 6 }} />
+              <Text style={{ fontSize: 15, color: '#333' }}>{vehicleInfo.make} {vehicleInfo.model} {vehicleInfo.regNum}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon name="star" size={16} color="#FFD700" style={{ marginRight: 6 }} />
+              <Text style={{ fontSize: 15, color: '#333' }}>{vehicleInfo.rating > 0 ? vehicleInfo.rating.toFixed(1) : 'N/A'}</Text>
+              {vehicleInfo.totalRides > 0 && (
+                <Text style={{ fontSize: 15, color: '#888' }}> • {vehicleInfo.totalRides} rides</Text>
+              )}
+            </View>
           </View>
         </View>
 
@@ -579,26 +645,39 @@ const RideDetailsScreen = () => {
 
         {/* Payment Section - Changes text based on role */}
         <View style={styles.paymentSection}>
-          <Text style={styles.paymentTitle}>{isDriver ? "I earned" : "I paid"}</Text>
+          <Text style={styles.paymentTitle}>{isDriver ? "Total earned" : "Total paid"}</Text>
 
           <View style={styles.paymentRow}>
             <Text style={styles.paymentLabel}>Fare</Text>
-            <Text style={styles.paymentAmount}>Rs {fare.toFixed(2)}</Text>
+            <Text style={styles.paymentAmount}>Rs. {fare.toFixed(2)}</Text>
           </View>
 
-          <View style={styles.totalPaymentRow}>
-            <View style={styles.totalPaymentLeft}>
-              <Text style={styles.totalPaymentLabel}>{isDriver ? "Total earned" : "Total paid"}</Text>
-            </View>
-            <Text style={styles.totalPaymentAmount}>Rs {fare.toFixed(2)}</Text>
-          </View>
         </View>
 
         {/* Remove from History */}
+        {/* --- Remove from history button --- */}
         <TouchableOpacity style={styles.removeButton} onPress={handleRemoveFromHistory}>
           <Text style={styles.removeButtonText}>Remove from history</Text>
         </TouchableOpacity>
+        <Toast visible={toast.visible} message={toast.message} type={toast.type} onHide={hideToast} />
       </ScrollView>
+      <AppModal
+        visible={modal.visible}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        onClose={hideModal}
+        actionText={modal.actionText}
+        onAction={modal.onAction}
+      />
+      <AppModal
+        visible={receiptModal.visible && (receiptModal.loading || receiptModal.type === 'error')}
+        type={receiptModal.type}
+        title={receiptModal.title}
+        message={receiptModal.message}
+        onClose={hideReceiptModal}
+        actionText={!receiptModal.loading && receiptModal.type === 'error' ? 'Close' : undefined}
+      />
     </View>
   )
 }
@@ -644,6 +723,13 @@ const styles = StyleSheet.create({
   mapContainer: {
     height: 250,
     backgroundColor: "#f5f5f5",
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    marginVertical: 8,
+    marginHorizontal: 16,
   },
   map: {
     flex: 1,
@@ -652,6 +738,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     backgroundColor: "#fff",
+    borderRadius: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    marginVertical: 8,
+    marginHorizontal: 16,
   },
   locationRow: {
     flexDirection: "row",
@@ -678,7 +771,7 @@ const styles = StyleSheet.create({
   locationName: {
     fontSize: 16,
     color: "#000",
-    fontWeight: "400",
+    fontWeight: "600",
     marginBottom: 2,
   },
   locationTime: {
@@ -690,6 +783,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: "#fff",
+    borderRadius: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    marginVertical: 8,
+    marginHorizontal: 16,
   },
   statItem: {
     flexDirection: "row",
@@ -704,7 +804,7 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 14,
     color: "#000",
-    fontWeight: "500",
+    fontWeight: "600",
   },
   personSection: {
     flexDirection: "row",
@@ -712,6 +812,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     backgroundColor: "#fff",
+    borderRadius: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    marginVertical: 8,
+    marginHorizontal: 16,
   },
   personAvatar: {
     width: 48,
@@ -761,6 +868,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderTopWidth: 1,
     borderTopColor: "#f0f0f0",
+    borderRadius: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    marginVertical: 8,
+    marginHorizontal: 16,
   },
   actionButton: {
     alignItems: "center",
@@ -781,6 +895,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderTopWidth: 1,
     borderTopColor: "#f0f0f0",
+    borderRadius: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    marginVertical: 8,
+    marginHorizontal: 16,
   },
   paymentTitle: {
     fontSize: 16,
@@ -801,6 +922,7 @@ const styles = StyleSheet.create({
   paymentAmount: {
     fontSize: 14,
     color: "#000",
+    fontWeight: "600",
   },
   totalPaymentRow: {
     flexDirection: "row",
@@ -828,6 +950,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderTopWidth: 1,
     borderTopColor: "#f0f0f0",
+    borderRadius: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    marginVertical: 8,
+    marginHorizontal: 16,
   },
   removeButtonText: {
     fontSize: 14,

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ActivityIndicator, StatusBar } from "react-native"
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ActivityIndicator, StatusBar, Platform, ScrollView, KeyboardAvoidingView } from "react-native"
 import { TextInput } from "react-native-paper"
 import Icon from "react-native-vector-icons/MaterialIcons"
 import * as Location from 'expo-location'
@@ -16,6 +16,7 @@ import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps'
 import MaterialIcons from "react-native-vector-icons/MaterialIcons"
 
 const { width, height } = Dimensions.get("window")
+const MAP_HEIGHT = height * 0.4;
 
 const PassengerHomeScreen = () => {
   const { rideInProgress, driverName, from, to, fare, vehicle, progress: initialProgress } = useLocalSearchParams()
@@ -77,17 +78,21 @@ const PassengerHomeScreen = () => {
       }
 
       // Start location tracking for passenger
-      await locationService.startLocationTracking((newLocation) => {
-        setCurrentLocation(newLocation);
-      }, {
-        accuracy: Location.Accuracy.Balanced,
-        timeInterval: 30000,
-        distanceInterval: 50,
-        role: 'passenger'
-      });
+      try {
+        await locationService.startLocationTracking((newLocation) => {
+          setCurrentLocation(newLocation);
+        }, {
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 30000,
+          distanceInterval: 50,
+          role: 'passenger'
+        });
+      } catch (err) {
+        showToast('Location tracking error: ' + ((err as any)?.message || 'Unknown error'), 'error');
+      }
 
     } catch (error) {
-      showToast('Error initializing app', 'error');
+      showToast('Location error: ' + ((error as any)?.message || 'Unknown error'), 'error');
     }
   };
 
@@ -155,10 +160,10 @@ const PassengerHomeScreen = () => {
         console.log('Estimated fare calculated:', estimatedFare);
         setOfferPrice(estimatedFare.toString());
       } else {
-        console.log('No distance data returned');
+        showToast('Could not calculate distance for fare', 'error');
       }
     } catch (error) {
-      console.error('Error calculating fare:', error);
+      showToast('Error calculating fare: ' + ((error as any)?.message || 'Unknown error'), 'error');
     }
   };
 
@@ -181,6 +186,34 @@ const PassengerHomeScreen = () => {
 
     if (!pickupCoords || !destinationCoords) {
       showToast('Please select valid locations', 'error');
+      return;
+    }
+
+    // Check if pickup and destination are the same location
+    const pickupLat = Number(pickupCoords.lat);
+    const pickupLng = Number(pickupCoords.lng);
+    const destLat = Number(destinationCoords.lat);
+    const destLng = Number(destinationCoords.lng);
+    
+    // Calculate distance between pickup and destination using Haversine formula
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (destLat - pickupLat) * Math.PI / 180;
+    const dLng = (destLng - pickupLng) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(pickupLat * Math.PI / 180) * Math.cos(destLat * Math.PI / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c;
+    
+    // If distance is very small (less than 0.1 km = 100 meters), consider them the same
+    if (distance < 0.1) {
+      showToast('You cannot have the same pickup and dropoff location', 'error');
+      return;
+    }
+    
+    // Also check if the location names are the same (case-insensitive)
+    if (pickupLocation.toLowerCase().trim() === destinationLocation.toLowerCase().trim()) {
+      showToast('You cannot have the same pickup and dropoff location', 'error');
       return;
     }
 
@@ -324,7 +357,7 @@ const PassengerHomeScreen = () => {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
-      <View style={styles.mapContainer}>
+      <View style={[styles.mapContainer, { height: MAP_HEIGHT }]}>
         {!sidePanelVisible && (
           <TouchableOpacity style={styles.hamburgerButton} onPress={() => setSidePanelVisible(true)}>
             <Icon name="menu" size={24} color="#333" />
@@ -358,95 +391,110 @@ const PassengerHomeScreen = () => {
         </MapView>
       </View>
 
-      <View style={styles.bottomSheet}>
-        <View style={styles.vehicleContainer}>
-          {vehicleTypes.map((vehicleType) => {
-            const isMotorcycle = vehicleType.name.toLowerCase().includes('bike') ;
-            
-            return (
-              <TouchableOpacity
-                key={vehicleType.name}
-                style={[styles.vehicleOption, selectedVehicleType?._id === vehicleType._id && styles.selectedVehicle]}
-                onPress={() => setSelectedVehicleType(vehicleType)}
-              >
-                <View style={styles.vehicleIconContainer}>
-                  <Icon 
-                    name={isMotorcycle ? "motorcycle" : "directions-car"} 
-                    size={24} 
-                    color={selectedVehicleType?._id === vehicleType._id ? "#075B5E" : "#666"} 
-                  />
-                </View>
-                <Text
-                  style={[
-                    styles.vehicleName,
-                    selectedVehicleType?._id === vehicleType._id && { color: "#075B5E", fontWeight: "600" },
-                  ]}
-                >
-                  {vehicleType.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        <View style={styles.inputSection}>
-          <View style={styles.inputRow}>
-            <LocationSearch
-              placeholder="From (Pickup Location)"
-              value={pickupLocation}
-              onChangeText={setPickupLocation}
-              onLocationSelect={handlePickupLocationSelect}
-              iconColor="#075B5E"
-            />
-          </View>
-
-          <View style={styles.inputRow}>
-            <LocationSearch
-              placeholder="To (Destination)"
-              value={destinationLocation}
-              onChangeText={setDestinationLocation}
-              onLocationSelect={handleDestinationLocationSelect}
-              iconColor="#EA2F14"
-            />
-          </View>
-
-          <View style={styles.inputRow}>
-            <Text style={styles.rupeeSymbol}>₹</Text>
-            <TextInput
-              mode="flat"
-              placeholder="Offer your fare"
-              placeholderTextColor={"#ccc"}
-              value={offerPrice}
-              onChangeText={setOfferPrice}
-              style={styles.fareInput}
-              keyboardType="numeric"
-              underlineColor="transparent"
-              activeUnderlineColor="transparent"
-              contentStyle={styles.inputContent}
-            />
-            <TouchableOpacity 
-              style={styles.calculateButton}
-              onPress={calculateEstimatedFare}
-            >
-              <Text style={styles.calculateButtonText}>Calculate</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.findDriverButton, loading && styles.buttonDisabled]}
-          onPress={handleCreateRide}
-          disabled={loading}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView 
+          style={styles.bottomSheet}
+          contentContainerStyle={[styles.bottomSheetContent, { paddingBottom: 8, flexGrow: 1 }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.buttonContent}>
-            {loading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.buttonText}>Find a driver</Text>
-            )}
+          <View style={styles.vehicleContainer}>
+            {vehicleTypes.map((vehicleType) => {
+              const isMotorcycle = vehicleType.name.toLowerCase().includes('bike') ;
+              
+              return (
+                <TouchableOpacity
+                  key={vehicleType.name}
+                  style={[styles.vehicleOption, selectedVehicleType?._id === vehicleType._id && styles.selectedVehicle]}
+                  onPress={() => setSelectedVehicleType(vehicleType)}
+                  disabled={loading}
+                >
+                  <View style={styles.vehicleIconContainer}>
+                    <Icon 
+                      name={isMotorcycle ? "motorcycle" : "directions-car"} 
+                      size={24} 
+                      color={selectedVehicleType?._id === vehicleType._id ? "#075B5E" : "#666"} 
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.vehicleName,
+                      selectedVehicleType?._id === vehicleType._id && { color: "#075B5E", fontWeight: "600" },
+                    ]}
+                  >
+                    {vehicleType.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
-        </TouchableOpacity>
-      </View>
+
+          <View style={styles.inputSection}>
+            <View style={styles.inputRow}>
+              <LocationSearch
+                placeholder="From (Pickup Location)"
+                value={pickupLocation}
+                onChangeText={setPickupLocation}
+                onLocationSelect={handlePickupLocationSelect}
+                iconColor="#075B5E"
+                disabled={loading}
+              />
+            </View>
+
+            <View style={styles.inputRow}>
+              <LocationSearch
+                placeholder="To (Destination)"
+                value={destinationLocation}
+                onChangeText={setDestinationLocation}
+                onLocationSelect={handleDestinationLocationSelect}
+                iconColor="#EA2F14"
+                disabled={loading}
+              />
+            </View>
+
+            <View style={styles.inputRow}>
+              <Text style={styles.rupeeSymbol}>₹</Text>
+              <TextInput
+                mode="flat"
+                placeholder="Offer your fare"
+                placeholderTextColor={"#ccc"}
+                value={offerPrice}
+                onChangeText={setOfferPrice}
+                style={[styles.fareInput, loading && styles.inputDisabled]}
+                keyboardType="numeric"
+                underlineColor="transparent"
+                activeUnderlineColor="transparent"
+                contentStyle={styles.inputContent}
+                editable={!loading}
+              />
+              <TouchableOpacity 
+                style={[styles.calculateButton, loading && styles.buttonDisabled]}
+                onPress={calculateEstimatedFare}
+                disabled={loading}
+              >
+                <Text style={styles.calculateButtonText}>Calculate</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.findDriverButton, { marginBottom: 32 }, loading && styles.buttonDisabled]}
+            onPress={handleCreateRide}
+            disabled={loading}
+          >
+            <View style={styles.buttonContent}>
+              {loading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.buttonText}>Find a driver</Text>
+              )}
+            </View>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {localRideInProgress && (
         <TouchableOpacity style={styles.miniPlayer} onPress={openRideTracking}>
@@ -524,14 +572,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingTop: 20,
-    paddingHorizontal: 16,
-    paddingBottom: 20, // Add space for mini-player
     elevation: 10,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
+  },
+  bottomSheetContent: {
+    paddingTop: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 8, // Reduce space for mini-player
   },
   vehicleContainer: {
     flexDirection: "row",
@@ -574,7 +624,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   inputSection: {
-    marginBottom: 24,
+    marginBottom: 8,
   },
   inputRow: {
     flexDirection: "row",
@@ -600,6 +650,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "transparent",
     fontSize: 16,
+  },
+  inputDisabled: {
+    opacity: 0.5,
   },
   inputContent: {
     paddingHorizontal: 0,

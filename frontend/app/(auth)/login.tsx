@@ -3,6 +3,8 @@ import { View, StyleSheet, Text, Image } from 'react-native';
 import { Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/FontAwesome';
+import { clearAccessToken } from '../utils/apiClient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LoginScreen = () => {
   const router = useRouter();
@@ -129,4 +131,10 @@ const styles = StyleSheet.create({
 });
 
 export default LoginScreen;
+
+export async function logoutAndResetNavigation(router: any) {
+  await clearAccessToken();
+  await AsyncStorage.removeItem('userRole');
+  router.replace('/login');
+}
 

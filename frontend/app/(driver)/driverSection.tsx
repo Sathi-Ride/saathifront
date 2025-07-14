@@ -12,11 +12,14 @@ import {
   RefreshControl,
   SafeAreaView,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useRouter, usePathname } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { MapPin, Navigation, Clock, User, Car, Map } from 'lucide-react-native';
+import ProfileImage from '../../components/ProfileImage';
 import SidePanel from '../(common)/sidepanel';
 import Toast from '../../components/ui/Toast';
 import { rideService, Ride } from '../utils/rideService';
@@ -25,6 +28,8 @@ import apiClient from '../utils/apiClient';
 import webSocketService from '../utils/websocketService';
 import { userRoleManager, useUserRole } from '../utils/userRoleManager';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import ConfirmationModal from '../../components/ui/ConfirmationModal';
+import * as Haptics from 'expo-haptics';
 
 const { width, height } = Dimensions.get('window');
 
@@ -50,6 +55,7 @@ const DriverSection = () => {
   const [kycStatus, setKycStatus] = useState<'pending' | 'approved' | 'rejected' | 'verified' | null>(null);
   const [pendingOfferRideId, setPendingOfferRideId] = useState<string | null>(null);
   const [pendingOffers, setPendingOffers] = useState<Ride[]>([]);
+  const [showBackConfirmation, setShowBackConfirmation] = useState(false);
   
   const [toast, setToast] = useState<{
     visible: boolean;
@@ -66,6 +72,9 @@ const DriverSection = () => {
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     setToast({ visible: true, message, type });
+    if (type === 'success') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    else if (type === 'error') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    else Haptics.selectionAsync();
   };
 
   const hideToast = () => {
@@ -356,13 +365,33 @@ const DriverSection = () => {
     closeSidePanel();
   };
 
-  const handleBackPress = () => router.back();
+  const handleBackPress = () => {
+    if (isOnline || loading) {
+      setShowBackConfirmation(true);
+    } else {
+      router.back();
+    }
+  };
+
+  const handleConfirmBack = () => {
+    setShowBackConfirmation(false);
+    router.back();
+  };
+
+  const handleCancelBack = () => {
+    setShowBackConfirmation(false);
+  };
 
   const renderRideItem = ({ item }: { item: Ride }) => (
     <View style={styles.rideCard}>
       <View style={styles.rideHeader}>
         <View style={styles.passengerInfo}>
-          <User size={20} color="#333" />
+          <ProfileImage 
+            photoUrl={item.passenger?.photo}
+            size={32}
+            fallbackIconColor="#333"
+            fallbackIconSize={20}
+          />
           <Text style={styles.passengerName}>
             {item.passenger ? item.passenger.firstName : ''} {item.passenger ? item.passenger.lastName : ''}
           </Text>
@@ -470,252 +499,232 @@ const DriverSection = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#075B5E" />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Driver Section</Text>
-        <TouchableOpacity onPress={openSidePanel} style={styles.menuButton}>
-          <MaterialIcons name="menu" size={24} color="#333" />
-        </TouchableOpacity>
-      </View>
+        <StatusBar barStyle="light-content" backgroundColor="#075B5E" />
+        
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
+            <MaterialIcons name="arrow-back" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Driver Section</Text>
+          <TouchableOpacity onPress={openSidePanel} style={styles.menuButton}>
+            <MaterialIcons name="menu" size={24} color="#333" />
+          </TouchableOpacity>
+        </View>
 
-      {/* KYC Status Indicator */}
-      {kycStatus && (
-        <View style={[styles.kycStatusContainer, 
-          (kycStatus === 'approved' || kycStatus === 'verified') ? styles.kycApproved :
-          kycStatus === 'pending' ? styles.kycPending :
-          styles.kycRejected
-        ]}>
-          <MaterialIcons 
-            name={
-              (kycStatus === 'approved' || kycStatus === 'verified') ? 'check-circle' :
-              kycStatus === 'pending' ? 'schedule' :
-              'error'
-            } 
-            size={16} 
-            color="white" 
-          />
-          <Text style={styles.kycStatusText}>
-            KYC: {(kycStatus === 'approved' || kycStatus === 'verified') ? 'Approved' : 
-                  kycStatus === 'pending' ? 'Pending' : 'Rejected'}
-          </Text>
-          {(kycStatus === 'pending' || kycStatus === 'rejected') && (
+
+        {/* KYC Not Complete Message */}
+        {!kycStatus && (
+          <View style={styles.kycIncompleteContainer}>
+            <MaterialIcons name="warning" size={20} color="#FF9800" />
+            <Text style={styles.kycIncompleteText}>
+              Complete your KYC verification to start accepting rides
+            </Text>
             <TouchableOpacity 
               style={styles.kycActionButton}
               onPress={() => router.push('/registration')}
+              disabled={loading}
             >
-              <Text style={styles.kycActionButtonText}>
-                {kycStatus === 'pending' ? 'Check Status' : 'Update Profile'}
-              </Text>
+              <Text style={styles.kycActionButtonText}>Start KYC</Text>
             </TouchableOpacity>
-          )}
-        </View>
-      )}
-
-      {/* KYC Not Complete Message */}
-      {kycStatus === null && (
-        <View style={styles.kycNotCompleteContainer}>
-          <MaterialIcons name="warning" size={24} color="#FF9800" />
-          <Text style={styles.kycNotCompleteText}>
-            Complete your driver profile to start accepting rides
-          </Text>
-          <TouchableOpacity 
-            style={styles.kycActionButton}
-            onPress={() => router.push('/registration')}
-          >
-            <Text style={styles.kycActionButtonText}>Complete Profile</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Map Section */}
-      <View style={styles.mapContainer}>
-        {currentLocation ? (
-          <MapView
-            style={styles.map}
-            initialRegion={{
-              latitude: currentLocation.lat,
-              longitude: currentLocation.lng,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            }}
-            region={{
-              latitude: currentLocation.lat,
-              longitude: currentLocation.lng,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            }}
-            provider={PROVIDER_GOOGLE}
-          >
-            {/* Driver's current location */}
-            <Marker
-              coordinate={{
-                latitude: currentLocation.lat,
-                longitude: currentLocation.lng,
-              }}
-              title="Your Location"
-              description="Driver's current position"
-            >
-              <View style={styles.driverMarker}>
-                <MaterialIcons name="location-on" size={24} color="#075B5E" />
-              </View>
-            </Marker>
-
-            {/* Available rides markers */}
-            {isOnline && availableRides.map((ride, index) => {
-              const isMotorcycle = ride.vehicleType?.name?.toLowerCase().includes('bike') || 
-                                  ride.vehicleType?.name?.toLowerCase().includes('moto') ||
-                                  ride.vehicleType?.name?.toLowerCase().includes('scooter') ||
-                                  ride.vehicleType?.name?.toLowerCase().includes('motorcycle');
-              
-              return (
-                <Marker
-                  key={ride._id}
-                  coordinate={{
-                    latitude: currentLocation.lat + (index * 0.001), // Simulate different locations
-                    longitude: currentLocation.lng + (index * 0.001),
-                  }}
-                  title={`${ride.passenger ? ride.passenger.firstName : ''} ${ride.passenger ? ride.passenger.lastName : ''}`}
-                  description={`₹${ride.offerPrice}`}
-                >
-                  <View style={styles.rideMarker}>
-                    <MaterialIcons 
-                      name={isMotorcycle ? "motorcycle" : "directions-car"} 
-                      size={16} 
-                      color="#fff" 
-                    />
-                  </View>
-                </Marker>
-              );
-            })}
-          </MapView>
-        ) : (
-          <View style={styles.mapPlaceholder}>
-            <Map size={48} color="#ccc" />
-            <Text style={styles.mapPlaceholderText}>Loading map...</Text>
           </View>
         )}
-      </View>
 
-      {/* Online/Offline Toggle */}
-      <View style={styles.toggleContainer}>
-        <View style={styles.toggleCard}>
-          <View style={styles.toggleInfo}>
-            <Text style={styles.toggleTitle}>Driver Status</Text>
-            <Text style={styles.toggleSubtitle}>
-              {isOnline ? 'You are online and receiving rides' : 'Go online to start receiving rides'}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.toggleButton, isOnline && styles.toggleButtonActive]}
-            onPress={handleOnlineToggle}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.toggleThumb, isOnline && styles.toggleThumbActive]} />
-          </TouchableOpacity>
-        </View>
-      </View>
+        {/* Map Section */}
+        <View style={styles.mapContainer}>
+          {currentLocation ? (
+            <MapView
+              style={styles.map}
+              initialRegion={{
+                latitude: currentLocation.lat,
+                longitude: currentLocation.lng,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              }}
+              region={{
+                latitude: currentLocation.lat,
+                longitude: currentLocation.lng,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              }}
+              provider={PROVIDER_GOOGLE}
+            >
+              {/* Driver's current location */}
+              <Marker
+                coordinate={{
+                  latitude: currentLocation.lat,
+                  longitude: currentLocation.lng,
+                }}
+                title="Your Location"
+                description="Driver's current position"
+              >
+                <View style={styles.driverMarker}>
+                  <MaterialIcons name="location-on" size={24} color="#075B5E" />
+                </View>
+              </Marker>
 
-      {/* Available Rides (only when online) */}
-      {isOnline && (
-        <View style={styles.ridesContainer}>
-          <View style={styles.ridesHeader}>
-            <Text style={styles.ridesTitle}>Available Rides ({availableRides.length})</Text>
-            <TouchableOpacity onPress={onRefresh} style={styles.refreshButton}>
-              <MaterialIcons name="refresh" size={20} color="#075B5E" />
-            </TouchableOpacity>
-          </View>
-          
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#075B5E" />
-              <Text style={styles.loadingText}>Loading rides...</Text>
-            </View>
-          ) : availableRides.length > 0 ? (
-            <FlatList
-              data={availableRides}
-              renderItem={renderRideItem}
-              keyExtractor={(item) => item._id}
-              showsVerticalScrollIndicator={false}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={onRefresh}
-                  colors={['#075B5E']}
-                  tintColor="#075B5E"
-                />
-              }
-            />
+              {/* Available rides markers */}
+              {isOnline && availableRides.map((ride, index) => {
+                const isMotorcycle = ride.vehicleType?.name?.toLowerCase().includes('bike') || 
+                                    ride.vehicleType?.name?.toLowerCase().includes('moto') ||
+                                    ride.vehicleType?.name?.toLowerCase().includes('scooter') ||
+                                    ride.vehicleType?.name?.toLowerCase().includes('motorcycle');
+                
+                return (
+                  <Marker
+                    key={ride._id}
+                    coordinate={{
+                      latitude: currentLocation.lat + (index * 0.001), // Simulate different locations
+                      longitude: currentLocation.lng + (index * 0.001),
+                    }}
+                    title={`${ride.passenger ? ride.passenger.firstName : ''} ${ride.passenger ? ride.passenger.lastName : ''}`}
+                    description={`₹${ride.offerPrice}`}
+                  >
+                    <View style={styles.rideMarker}>
+                      <MaterialIcons 
+                        name={isMotorcycle ? "motorcycle" : "directions-car"} 
+                        size={16} 
+                        color="#fff" 
+                      />
+                    </View>
+                  </Marker>
+                );
+              })}
+            </MapView>
           ) : (
-            <View style={styles.noRidesContainer}>
-              <Car size={48} color="#ccc" />
-              <Text style={styles.noRidesText}>No rides available at the moment</Text>
-              <Text style={styles.noRidesSubtext}>Stay online to receive ride requests</Text>
+            <View style={styles.mapPlaceholder}>
+              <Map size={48} color="#ccc" />
+              <Text style={styles.mapPlaceholderText}>Loading map...</Text>
             </View>
           )}
         </View>
-      )}
 
-      {/* Current Ride (if any) */}
-      {currentRide && (
-        <View style={styles.currentRideContainer}>
-          <Text style={styles.currentRideTitle}>Current Ride</Text>
-          <View style={styles.currentRideCard}>
-            <Text style={styles.currentRideText}>
-              Passenger: {currentRide.passenger ? currentRide.passenger.firstName : ''} {currentRide.passenger ? currentRide.passenger.lastName : ''}
-            </Text>
-            <Text style={styles.currentRideText}>From: {currentRide.pickUpLocation}</Text>
-            <Text style={styles.currentRideText}>To: {currentRide.dropOffLocation}</Text>
-            <Text style={styles.currentRideText}>Fare: ₹{currentRide.offerPrice}</Text>
-            <View style={styles.currentRideActions}>
-              <TouchableOpacity style={styles.startButton} onPress={handleStartRide}>
-                <Text style={styles.startButtonText}>Start Ride</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.completeButton} onPress={handleCompleteRide}>
-                <Text style={styles.completeButtonText}>Complete</Text>
-              </TouchableOpacity>
+        {/* Online/Offline Toggle */}
+        <View style={styles.toggleContainer}>
+          <View style={styles.toggleCard}>
+            <View style={styles.toggleInfo}>
+              <Text style={styles.toggleTitle}>Driver Status</Text>
+              <Text style={styles.toggleSubtitle}>
+                {isOnline ? 'You are online and receiving rides' : 'Go online to start receiving rides'}
+              </Text>
             </View>
+            <TouchableOpacity
+              style={[styles.toggleButton, isOnline && styles.toggleButtonActive]}
+              onPress={handleOnlineToggle}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.toggleThumb, isOnline && styles.toggleThumbActive]} />
+            </TouchableOpacity>
           </View>
         </View>
-      )}
 
-      {/* Offline Message */}
-      {!isOnline && (
-        <View style={styles.offlineContainer}>
-          <MaterialIcons name="wifi-off" size={48} color="#ccc" />
-          <Text style={styles.offlineText}>You are currently offline</Text>
-          <Text style={styles.offlineSubtext}>Toggle the switch above to go online and start receiving rides</Text>
-        </View>
-      )}
+        {/* Available Rides (only when online) */}
+        {isOnline && (
+          <View style={styles.ridesContainer}>
+            <View style={styles.ridesHeader}>
+              <Text style={styles.ridesTitle}>Available Rides ({availableRides.length})</Text>
+              <TouchableOpacity onPress={onRefresh} style={styles.refreshButton}>
+                <MaterialIcons name="refresh" size={20} color="#075B5E" />
+              </TouchableOpacity>
+            </View>
+            
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#075B5E" />
+                <Text style={styles.loadingText}>Loading rides...</Text>
+              </View>
+            ) : availableRides.length > 0 ? (
+              <FlatList
+                data={availableRides}
+                renderItem={renderRideItem}
+                keyExtractor={(item) => item._id}
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                    colors={['#075B5E']}
+                    tintColor="#075B5E"
+                  />
+                }
+              />
+            ) : (
+              <View style={styles.noRidesContainer}>
+                <Car size={48} color="#ccc" />
+                <Text style={styles.noRidesText}>No rides available at the moment</Text>
+                <Text style={styles.noRidesSubtext}>Stay online to receive ride requests</Text>
+              </View>
+            )}
+          </View>
+        )}
 
-      {/* Pending Offers */}
-      {pendingOffers.map(ride => (
-        <View key={ride._id} style={{ padding: 16, margin: 8, backgroundColor: '#fff', borderRadius: 8, alignItems: 'center' }}>
-          <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>Waiting for passenger to accept...</Text>
-          <ActivityIndicator size="small" color="#075B5E" />
-          <Text style={{ marginTop: 8 }}>{ride.pickUp?.location} → {ride.dropOff?.location}</Text>
-        </View>
-      ))}
+        {/* Current Ride (if any) */}
+        {currentRide && (
+          <View style={styles.currentRideContainer}>
+            <Text style={styles.currentRideTitle}>Current Ride</Text>
+            <View style={styles.currentRideCard}>
+              <Text style={styles.currentRideText}>
+                Passenger: {currentRide.passenger ? currentRide.passenger.firstName : ''} {currentRide.passenger ? currentRide.passenger.lastName : ''}
+              </Text>
+              <Text style={styles.currentRideText}>From: {currentRide.pickUpLocation}</Text>
+              <Text style={styles.currentRideText}>To: {currentRide.dropOffLocation}</Text>
+              <Text style={styles.currentRideText}>Fare: ₹{currentRide.offerPrice}</Text>
+              <View style={styles.currentRideActions}>
+                <TouchableOpacity style={styles.startButton} onPress={handleStartRide}>
+                  <Text style={styles.startButtonText}>Start Ride</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.completeButton} onPress={handleCompleteRide}>
+                  <Text style={styles.completeButtonText}>Complete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
 
-      <SidePanel
-        visible={sidePanelVisible}
-        onClose={closeSidePanel}
-        role={role}
-        rideInProgress={rideInProgress}
-        onChangeRole={handleChangeRole}
-      />
+        {/* Offline Message */}
+        {!isOnline && (
+          <View style={styles.offlineContainer}>
+            <MaterialIcons name="wifi-off" size={48} color="#ccc" />
+            <Text style={styles.offlineText}>You are currently offline</Text>
+            <Text style={styles.offlineSubtext}>Toggle the switch above to go online and start receiving rides</Text>
+          </View>
+        )}
 
-      <Toast
-        visible={toast.visible}
-        message={toast.message}
-        type={toast.type}
-        onHide={hideToast}
-      />
-    </SafeAreaView>
+        {/* Pending Offers */}
+        {pendingOffers.map(ride => (
+          <View key={ride._id} style={{ padding: 16, margin: 8, backgroundColor: '#fff', borderRadius: 8, alignItems: 'center' }}>
+            <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>Waiting for passenger to accept...</Text>
+            <ActivityIndicator size="small" color="#075B5E" />
+            <Text style={{ marginTop: 8 }}>{ride.pickUp?.location} → {ride.dropOff?.location}</Text>
+          </View>
+        ))}
+
+        <SidePanel
+          visible={sidePanelVisible}
+          onClose={closeSidePanel}
+          role={role}
+          rideInProgress={rideInProgress}
+          onChangeRole={handleChangeRole}
+        />
+
+        <Toast
+          visible={toast.visible}
+          message={toast.message}
+          type={toast.type}
+          onHide={hideToast}
+        />
+
+        <ConfirmationModal
+          visible={showBackConfirmation}
+          title={isOnline ? "Go Offline and Leave?" : "Cancel Loading?"}
+          message={isOnline ? "You are currently online. Going back will take you offline and you will stop receiving ride requests. Are you sure you want to continue?" : "Driver data is currently loading. Are you sure you want to cancel this process?"}
+          confirmText="Go Back"
+          cancelText="Stay"
+          onConfirm={handleConfirmBack}
+          onCancel={handleCancelBack}
+          type="warning"
+        />
+      </SafeAreaView>
   );
 };
 
@@ -1086,18 +1095,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  kycNotCompleteContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#FF9800',
+  kycIncompleteContainer: {
+    backgroundColor: '#FFF3E0',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
     borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
   },
-  kycNotCompleteText: {
-    marginLeft: 8,
-    fontSize: 16,
-    color: '#333',
+  kycIncompleteText: {
+    color: '#E65100',
+    fontSize: 14,
+    marginTop: 8,
+    marginBottom: 12,
   },
 });
 

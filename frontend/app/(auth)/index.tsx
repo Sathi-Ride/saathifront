@@ -1,15 +1,34 @@
 import React from 'react';
 import { View, Image, StyleSheet, ActivityIndicator, Text } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { initializeApiClient, refreshAccessToken, getAccessToken } from '../utils/apiClient';
 
 const SplashScreen = () => {
   const router = useRouter();
 
   React.useEffect(() => {
-    const timer = setTimeout(() => {
+    const checkAuthAndNavigate = async () => {
+      await initializeApiClient();
+      const token = await AsyncStorage.getItem('accessToken');
+      const role = await AsyncStorage.getItem('userRole');
+      if (token && role) {
+        // Try to refresh token if possible
+        const refreshed = await refreshAccessToken();
+        const validToken = refreshed || (await getAccessToken());
+        if (validToken) {
+          if (role === 'driver') {
+            router.replace('/(driver)');
+          } else {
+            router.replace('/(tabs)');
+          }
+          return;
+        }
+      }
+      // If not logged in, go to login
       router.replace('/login');
-    }, 2000);
-    return () => clearTimeout(timer);
+    };
+    checkAuthAndNavigate();
   }, [router]);
 
   return (

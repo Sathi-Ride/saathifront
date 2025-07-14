@@ -51,46 +51,48 @@ const DriverHomeScreen = () => {
   };
 
   useEffect(() => {
-    if (initialRestored === 'true' || registrationComplete === 'true') {
-      setIsAccountRestored(true);
-      fetchProfile();
-    } else {
-      setLoading(false);
-    }
+    // Always check if driver is logged in, regardless of params
+    const checkDriverStatus = async () => {
+      try {
+        setLoading(true);
+        const response = await apiClient.get('driver-profile');
+        if (response.data.data) {
+          // Driver is logged in and has a profile
+          setIsAccountRestored(true);
+          const profile = response.data.data;
+          
+          setVehicleDetails({
+            type: profile.vehicleMake || 'Not specified',
+            licensePlate: profile.vehicleRegNum || profile.licensePlate || 'Not specified',
+            model: profile.vehicleModel || profile.model || 'Not specified',
+          });
+          setPassengerRatings({
+            averageRating: profile.rating || 0,
+            totalReviews: profile.totalRides || 0,
+          });
+          setRecentRide({
+            from: profile.lastRide?.pickupLocation || 'No recent rides',
+            to: profile.lastRide?.dropoffLocation || 'No recent rides',
+            date: profile.lastRide?.date ? new Date(profile.lastRide.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'No recent rides',
+            fare: profile.lastRide?.fare ? `₹${profile.lastRide.fare}` : 'No recent rides',
+          });
+        } else {
+          // Driver is not logged in or has no profile
+          setIsAccountRestored(false);
+        }
+      } catch (err) {
+        // If API call fails, assume driver is not logged in
+        setIsAccountRestored(false);
+        console.log('Driver not logged in or API error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkDriverStatus();
   }, [initialRestored, registrationComplete]);
 
-  const fetchProfile = async () => {
-    try {
-      setLoading(true);
-      const response = await apiClient.get('driver-profile');
-      if (response.data.data) {
-        const profile = response.data.data;
-        
-        setVehicleDetails({
-          type: profile.vehicleMake || 'Not specified',
-          licensePlate: profile.vehicleRegNum || profile.licensePlate || 'Not specified',
-          model: profile.vehicleModel || profile.model || 'Not specified',
-        });
-        setPassengerRatings({
-          averageRating: profile.rating || 0,
-          totalReviews: profile.totalRides || 0,
-        });
-        setRecentRide({
-          from: profile.lastRide?.pickupLocation || 'No recent rides',
-          to: profile.lastRide?.dropoffLocation || 'No recent rides',
-          date: profile.lastRide?.date ? new Date(profile.lastRide.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'No recent rides',
-          fare: profile.lastRide?.fare ? `₹${profile.lastRide.fare}` : 'No recent rides',
-        });
-      } else {
-        setIsAccountRestored(false); // Reset if no profile exists
-      }
-    } catch (err) {
-      setIsAccountRestored(false); // Assume no profile on error
-      showToast('Failed to load profile data', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
+
 
   const openSidePanel = () => setSidePanelVisible(true);
   const closeSidePanel = () => setSidePanelVisible(false);
@@ -151,7 +153,7 @@ const DriverHomeScreen = () => {
 
           <View style={styles.ratingsCard}>
             <Text style={styles.sectionTitle}>Passenger Ratings</Text>
-            <Text style={styles.detailText}>Average Rating: {passengerRatings.averageRating} / 5</Text>
+            <Text style={styles.detailText}>Average Rating: {passengerRatings.averageRating.toFixed(1)} / 5</Text>
             <Text style={styles.detailText}>Total Reviews: {passengerRatings.totalReviews}</Text>
           </View>
 
@@ -235,6 +237,9 @@ const DriverHomeScreen = () => {
         rideInProgress={rideInProgress}
         onChangeRole={handleChangeRole}
       />
+      {toast.visible && (
+        <Toast visible={toast.visible} message={toast.message} type={toast.type} onHide={hideToast} />
+      )}
     </SafeAreaView>
   );
 };
@@ -247,12 +252,13 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 16,
     paddingTop: 10,
+    marginTop: 28,
   },
   hamburgerButton: {
     width: 24,
     height: 18,
     justifyContent: 'space-between',
-    marginTop: 30,
+    marginTop: 28,
   },
   hamburgerLine: {
     width: 24,

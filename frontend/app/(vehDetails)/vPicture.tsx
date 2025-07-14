@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import * as ImagePicker from 'expo-image-picker';
 import { useDriverRegistration } from '../DriverRegistrationContext';
+import AppModal from '../../components/ui/AppModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -11,6 +12,22 @@ const Picture = () => {
   const router = useRouter();
   const { registrationData, updateRegistrationData } = useDriverRegistration();
   const [vehiclePhoto, setVehiclePhoto] = useState<string | null>(registrationData.vehiclePhoto || null);
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'info';
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
+
+  const showModal = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    setModal({ visible: true, type, title, message });
+  };
+  const hideModal = () => setModal((prev) => ({ ...prev, visible: false }));
 
   const handleBack = () => {
     router.back();
@@ -19,7 +36,7 @@ const Picture = () => {
   const handleAddPhoto = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permissionResult.granted === false) {
-      Alert.alert("Permission required", "You need to allow access to your photos to upload an image.");
+      showModal('info', 'Permission required', 'You need to allow access to your photos to upload an image.');
       return;
     }
 
@@ -38,7 +55,7 @@ const Picture = () => {
 
   const handleDone = () => {
     if (!vehiclePhoto) {
-      Alert.alert('Error', 'Please upload a vehicle photo');
+      showModal('error', 'Error', 'Please upload a vehicle photo');
       return;
     }
     updateRegistrationData({
@@ -82,6 +99,13 @@ const Picture = () => {
           </Text>
         </TouchableOpacity>
       </View>
+      <AppModal
+        visible={modal.visible}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        onClose={hideModal}
+      />
     </View>
   );
 };
@@ -101,6 +125,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
     backgroundColor: '#fff',
+    marginTop:30,
   },
   headerTitle: {
     fontSize: 20,
@@ -151,7 +176,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   addButton: {
-    backgroundColor: '#535C91',
+    backgroundColor: '#3D74B6',
     borderRadius: 20,
     paddingVertical: 10,
     paddingHorizontal: 20,

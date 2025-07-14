@@ -14,6 +14,7 @@ import { ArrowLeft, ChevronRight} from 'lucide-react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useDriverRegistration } from '../DriverRegistrationContext';
 import apiClient from '../utils/apiClient';
+import AppModal from '../../components/ui/AppModal';
 
 type Vehicle = {
   _id: string;
@@ -27,6 +28,22 @@ const ChooseVehicle = () => {
   const { updateRegistrationData } = useDriverRegistration();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'info';
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
+
+  const showModal = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    setModal({ visible: true, type, title, message });
+  };
+  const hideModal = () => setModal((prev) => ({ ...prev, visible: false }));
 
   useEffect(() => {
     fetchVehicleTypes();
@@ -41,7 +58,7 @@ const ChooseVehicle = () => {
       }
     } catch (error) {
       console.error('Failed to fetch vehicle types:', error);
-      Alert.alert('Error', 'Failed to load vehicle types. Please try again.');
+      showModal('error', 'Error', 'Failed to load vehicle types. Please try again.');
       // Fallback to default vehicles
       setVehicles([
         { _id: 'car', name: 'Car', description: '4-seater car' },
@@ -129,6 +146,13 @@ const ChooseVehicle = () => {
           ))}
         </View>
       </View>
+      <AppModal
+        visible={modal.visible}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        onClose={hideModal}
+      />
     </SafeAreaView>
   );
 };

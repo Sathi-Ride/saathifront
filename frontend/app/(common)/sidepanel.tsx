@@ -7,6 +7,7 @@ import Icon from "react-native-vector-icons/MaterialIcons"
 import { useRouter } from "expo-router"
 import { userRoleManager } from '../utils/userRoleManager';
 import webSocketService from '../utils/websocketService';
+import { logoutAndResetNavigation } from '../(auth)/login';
 
 const { width } = Dimensions.get("window")
 
@@ -55,11 +56,9 @@ const SidePanel: React.FC<SidePanelProps> = ({ visible, onClose, role, rideInPro
     onClose()
   }
 
-  const handleLogout = () => {
-    // TODO: Clear local storage/async storage when backend is ready
-    // await AsyncStorage.clear();
-    router.push("/login")
-    onClose()
+  const handleLogout = async () => {
+    await logoutAndResetNavigation(router);
+    onClose();
   }
 
   const handleChangeRole = async () => {

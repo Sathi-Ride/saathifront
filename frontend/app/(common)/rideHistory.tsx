@@ -9,6 +9,11 @@ import { rideService, Ride } from '../utils/rideService';
 
 const { width, height } = Dimensions.get("window")
 
+// Add a simple event emitter for ride removal
+const rideRemovedListeners: ((id: string) => void)[] = [];
+export const onRideRemoved = (cb: (id: string) => void) => { rideRemovedListeners.push(cb); return () => { const i = rideRemovedListeners.indexOf(cb); if (i > -1) rideRemovedListeners.splice(i, 1); } };
+export const emitRideRemoved = (id: string) => { rideRemovedListeners.forEach(cb => cb(id)); };
+
 const RideHistoryScreen = () => {
   const router = useRouter()
   const userRole = useUserRole();
@@ -44,6 +49,12 @@ const RideHistoryScreen = () => {
     }
     fetchHistory()
   }, [userRole])
+
+  useEffect(() => {
+    // Listen for ride removal
+    const unsub = onRideRemoved((removedId) => setRideHistory(prev => prev.filter(r => r._id !== removedId)));
+    return () => unsub();
+  }, []);
 
   const resetToPassenger = async () => {
     console.log('[RideHistory] Resetting role to passenger...')
@@ -112,6 +123,7 @@ const RideHistoryScreen = () => {
         pickupLng: ride.pickUpLng?.toString() || ride.pickUp?.coords?.coordinates?.[0]?.toString() || '',
         dropoffLat: ride.dropOffLat?.toString() || ride.dropOff?.coords?.coordinates?.[1]?.toString() || '',
         dropoffLng: ride.dropOffLng?.toString() || ride.dropOff?.coords?.coordinates?.[0]?.toString() || '',
+        // No function param
       },
     });
   }

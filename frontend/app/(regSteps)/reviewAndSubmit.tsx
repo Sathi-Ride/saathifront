@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useDriverRegistration } from '../DriverRegistrationContext';
 import apiClient from '../utils/apiClient';
 import { userRoleManager } from '../utils/userRoleManager';
 import Toast from '../../components/ui/Toast';
+import ConfirmationModal from '../../components/ui/ConfirmationModal';
 
 const ReviewAndSubmit = () => {
   const { registrationData } = useDriverRegistration();
   const [loading, setLoading] = useState(false);
+  const [showBackConfirmation, setShowBackConfirmation] = useState(false);
   const [toast, setToast] = useState<{
     visible: boolean;
     message: string;
@@ -21,6 +23,7 @@ const ReviewAndSubmit = () => {
   });
 
   const handleEdit = (step: string) => {
+    if (loading) return;
     router.push(step as any);
   };
 
@@ -30,6 +33,23 @@ const ReviewAndSubmit = () => {
 
   const hideToast = () => {
     setToast(prev => ({ ...prev, visible: false }));
+  };
+
+  const handleBackPress = () => {
+    if (loading) {
+      setShowBackConfirmation(true);
+    } else {
+      router.back();
+    }
+  };
+
+  const handleConfirmBack = () => {
+    setShowBackConfirmation(false);
+    router.back();
+  };
+
+  const handleCancelBack = () => {
+    setShowBackConfirmation(false);
   };
 
   const handleSubmit = async () => {
@@ -163,8 +183,8 @@ const ReviewAndSubmit = () => {
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{title}</Text>
-        <TouchableOpacity onPress={() => handleEdit(editRoute)}>
-          <MaterialIcons name="edit" size={20} color="#007AFF" />
+        <TouchableOpacity onPress={() => handleEdit(editRoute)} disabled={loading}>
+          <MaterialIcons name="edit" size={20} color={loading ? "#ccc" : "#007AFF"} />
         </TouchableOpacity>
       </View>
       {data.map((item, index) => (
@@ -182,134 +202,137 @@ const ReviewAndSubmit = () => {
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollView}>
-        <Text style={styles.title}>Review & Submit</Text>
+      <View style={styles.container}>
+        <ScrollView style={styles.scrollView}>
+          <Text style={styles.title}>Review & Submit</Text>
 
-        {renderSection('Basic Profile', [
-          { label: 'Profile Photo', value: registrationData.profileImage, key: 'profileImage' },
-          { label: 'First Name', value: registrationData.firstName, key: 'firstName' },
-          { label: 'Last Name', value: registrationData.lastName, key: 'lastName' },
-          { label: 'Email', value: registrationData.email, key: 'email' },
-          { label: 'City', value: registrationData.city, key: 'city' },
-        ], '/(regSteps)/basicProfile')}
+          {renderSection('Basic Profile', [
+            { label: 'Profile Photo', value: registrationData.profileImage, key: 'profileImage' },
+            { label: 'First Name', value: registrationData.firstName, key: 'firstName' },
+            { label: 'Last Name', value: registrationData.lastName, key: 'lastName' },
+            { label: 'Email', value: registrationData.email, key: 'email' },
+            { label: 'City', value: registrationData.city, key: 'city' },
+          ], '/(regSteps)/basicProfile')}
 
-        {renderSection('License and ID', [
-          { label: 'Driver License', value: registrationData.licenseFrontImgPath, key: 'licenseFrontImgPath' },
-          { label: 'National ID', value: registrationData.citizenshipDocFrontImgPath, key: 'citizenshipDocFrontImgPath' },
-        ], '/(regSteps)/driverLicense')}
-        
-        {renderSection('Selfie', [
-          { label: 'Selfie with ID', value: registrationData.selfiePhoto, key: 'selfiePhoto' },
-        ], '/(regSteps)/registerSelfie')}
+          {renderSection('License and ID', [
+            { label: 'Driver License', value: registrationData.licenseFrontImgPath, key: 'licenseFrontImgPath' },
+            { label: 'National ID', value: registrationData.citizenshipDocFrontImgPath, key: 'citizenshipDocFrontImgPath' },
+          ], '/(regSteps)/driverLicense')}
+          
+          {renderSection('Selfie', [
+            { label: 'Selfie with ID', value: registrationData.selfiePhoto, key: 'selfiePhoto' },
+          ], '/(regSteps)/registerSelfie')}
 
-        {renderSection('Vehicle Information', [
-          { label: 'Brand', value: registrationData.vehicleMake, key: 'vehicleMake' },
-          { label: 'Registration Plate', value: registrationData.vehicleRegNum, key: 'vehicleRegNum' },
-          { label: 'Vehicle Photo', value: registrationData.vehiclePhoto, key: 'vehiclePhoto' },
-          { label: 'Billbook Front', value: registrationData.blueBookFrontImgPath, key: 'blueBookFrontImgPath' },
-          { label: 'Billbook Back', value: registrationData.blueBookBackImgPath, key: 'blueBookBackImgPath' },
-          { label: 'Billbook Number', value: registrationData.billbookNumber, key: 'billbookNumber' },
-        ], '/(vehDetails)/vBrand')}
+          {renderSection('Vehicle Information', [
+            { label: 'Brand', value: registrationData.vehicleMake, key: 'vehicleMake' },
+            { label: 'Registration Plate', value: registrationData.vehicleRegNum, key: 'vehicleRegNum' },
+            { label: 'Vehicle Photo', value: registrationData.vehiclePhoto, key: 'vehiclePhoto' },
+            { label: 'Billbook Front', value: registrationData.blueBookFrontImgPath, key: 'blueBookFrontImgPath' },
+            { label: 'Billbook Back', value: registrationData.blueBookBackImgPath, key: 'blueBookBackImgPath' },
+            { label: 'Billbook Number', value: registrationData.billbookNumber, key: 'billbookNumber' },
+          ], '/(vehDetails)/vBrand')}
 
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Submit Registration</Text>}
-        </TouchableOpacity>
-      </ScrollView>
+          <TouchableOpacity style={[styles.submitButton, loading && styles.submitButtonDisabled]} onPress={handleSubmit} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Submit Registration</Text>}
+          </TouchableOpacity>
+        </ScrollView>
 
-      <Toast
-        visible={toast.visible}
-        message={toast.message}
-        type={toast.type}
-        onHide={hideToast}
-        duration={4000}
-      />
+        <Toast
+          visible={toast.visible}
+          message={toast.message}
+          type={toast.type}
+          onHide={hideToast}
+          duration={4000}
+        />
+
+        <ConfirmationModal
+          visible={showBackConfirmation}
+          title="Cancel Submission?"
+          message="You are currently submitting your registration. Are you sure you want to cancel this process?"
+          confirmText="Cancel"
+          cancelText="Continue"
+          onConfirm={handleConfirmBack}
+          onCancel={handleCancelBack}
+          type="warning"
+        />
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#f8f9fa',
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
   },
   scrollView: {
     flex: 1,
-    padding: 10,
+    padding: 20,
   },
-  title: { 
-    fontSize: 28, 
-    fontWeight: 'bold', 
-    marginBottom: 20, 
-    marginTop: 50,
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 20,
     textAlign: 'center',
-    color: '#333'
   },
   section: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: 25,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 15,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    paddingBottom: 10,
+    marginBottom: 10,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
     color: '#333',
   },
-  row: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
     paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e9ecef',
   },
-  label: { 
-    fontWeight: '500', 
-    color: '#555',
-    fontSize: 16,
+  label: {
+    fontSize: 14,
+    color: '#666',
+    flex: 1,
   },
-  value: { 
-    color: '#666', 
-    fontSize: 16,
-    flexShrink: 1,
+  value: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+    flex: 2,
     textAlign: 'right',
   },
   image: {
-    width: 80,
-    height: 80,
+    width: 60,
+    height: 40,
+    borderRadius: 4,
+  },
+  submitButton: {
+    backgroundColor: '#075B5E',
+    paddingVertical: 15,
     borderRadius: 8,
-    backgroundColor: '#eee'
-  },
-  submitButton: { 
-    backgroundColor: '#075B5E', 
-    borderRadius: 25, 
-    paddingVertical: 16, 
-    alignItems: 'center', 
-    marginTop: 10,
+    alignItems: 'center',
+    marginTop: 20,
     marginBottom: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 5,
   },
-  submitButtonText: { 
-    color: '#fff', 
-    fontSize: 18, 
-    fontWeight: '600' 
+  submitButtonDisabled: {
+    backgroundColor: '#ccc',
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

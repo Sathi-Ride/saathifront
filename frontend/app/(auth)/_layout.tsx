@@ -2,7 +2,7 @@ import { Stack } from 'expo-router';
 
 export default function Layout() {
   return (
-    <Stack>
+    <Stack screenOptions={{animation: 'fade_from_bottom'}}>
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="phoneLogin" options={{ headerShown: false }} />

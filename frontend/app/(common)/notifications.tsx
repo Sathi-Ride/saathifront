@@ -3,10 +3,18 @@ import { View, Text, TouchableOpacity, StyleSheet, StatusBar } from 'react-nativ
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import websocketService from '../utils/websocketService';
+import Toast from '../../components/ui/Toast';
 
 const Notifications = () => {
   const router = useRouter();
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
+  const showToast = (message: string, type: 'info' | 'success' | 'error') => setToast({ visible: true, message, type });
+  const hideToast = () => setToast(prev => ({ ...prev, visible: false }));
 
   const handleBackPress = () => {
     router.back();
@@ -22,12 +30,18 @@ const Notifications = () => {
           if (isMounted) setNotifications(prev => [{ type: 'rideCompleted', ...data, createdAt: new Date() }, ...prev]);
         };
         websocketService.on('rideCompleted', rideCompletedListener);
-      } catch (err) {}
+        websocketService.on('error', (err) => {
+          showToast('WebSocket error: ' + (err?.message || 'Unknown error'), 'error');
+        });
+      } catch (err) {
+        showToast('WebSocket connection failed', 'error');
+      }
     }
     setupWebSocket();
     return () => {
       isMounted = false;
       if (rideCompletedListener) websocketService.off('rideCompleted', rideCompletedListener);
+      websocketService.off('error');
     };
   }, []);
 
@@ -57,6 +71,9 @@ const Notifications = () => {
           ))
         )}
       </View>
+      {toast.visible && (
+        <Toast visible={toast.visible} message={toast.message} type={toast.type} onHide={hideToast} />
+      )}
     </View>
   );
 };
@@ -79,7 +96,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: '#000',
-    marginLeft: 16,
+    marginLeft: 18,
     marginTop: 25,
   },
   content: {

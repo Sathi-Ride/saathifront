@@ -2,7 +2,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import webSocketService from './websocketService';
 
-const API_URL = 'http://192.168.0.2:9000/api/v1';
+const API_URL = 'http://192.168.0.4:9000/api/v1';
 
 const apiClient = axios.create({
   baseURL: API_URL,

@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, StatusBar, Alert, ActivityIndicator } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, StatusBar, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
 import apiClient from '../utils/apiClient';
+import ConfirmationModal from '../../components/ui/ConfirmationModal';
+import AppModal from '../../components/ui/AppModal';
+import Toast from '../../components/ui/Toast';
+import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const CODE_LENGTH = 6;
 
 const AccountRestoration = () => {
   const router = useRouter();
@@ -11,8 +18,43 @@ const AccountRestoration = () => {
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [accessToken, setAccessToken] = useState('');
+  const [showBackConfirmation, setShowBackConfirmation] = useState(false);
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({ visible: false, message: '', type: 'info' });
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    setToast({ visible: true, message, type });
+    if (type === 'success') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    else if (type === 'error') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    else Haptics.selectionAsync();
+  };
+  const hideToast = () => setToast(prev => ({ ...prev, visible: false }));
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'info';
+    title: string;
+    message: string;
+    actionText?: string;
+    onAction?: (() => void);
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+    actionText: undefined,
+    onAction: undefined,
+  });
+  const inputRef = useRef<TextInput | null>(null);
+
+  const showModal = (type: 'success' | 'error' | 'info', title: string, message: string, actionText?: string, onAction?: (() => void)) => {
+    setModal({ visible: true, type, title, message, actionText, onAction });
+  };
+  const hideModal = () => setModal((prev) => ({ ...prev, visible: false }));
 
   const handleBack = () => {
+    setShowBackConfirmation(true);
+  };
+
+  const handleConfirmBack = () => {
+    setShowBackConfirmation(false);
     if (step === 'otp') {
       setStep('phone');
       setOtp('');
@@ -21,135 +63,153 @@ const AccountRestoration = () => {
     }
   };
 
+  const handleCancelBack = () => {
+    setShowBackConfirmation(false);
+  };
+
   const handleSendOtp = async () => {
     if (!phoneNumber.trim()) {
-      Alert.alert('Error', 'Please enter a phone number');
+      showToast('Please enter a phone number', 'error');
       return;
     }
     setLoading(true);
     try {
-      // Send OTP
       const response = await apiClient.post('auth/login', { mobile: phoneNumber });
       if (response.data.statusCode === 201 || response.data.statusCode === 200) {
         setStep('otp');
-        Alert.alert('OTP Sent', 'An OTP has been sent to your phone.');
+        showToast('OTP sent successfully!', 'success');
       } else {
-        Alert.alert('Error', 'No user exists with this phone number. Please register a vehicle.', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Register Vehicle', onPress: () => router.push('/registerVehicle') },
-        ]);
+        showModal('error', 'Error', 'No user exists with this phone number. Please register a vehicle.', 'Register Vehicle', () => router.push('/registerVehicle'));
       }
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to send OTP. Please try again.');
+      showToast(err?.response?.data?.message || 'Failed to send OTP. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   const handleVerifyOtp = async () => {
-    if (!otp.trim() || otp.length !== 6) {
-      Alert.alert('Error', 'Please enter a valid 6-digit OTP');
+    if (!otp.trim() || otp.length !== CODE_LENGTH) {
+      showToast('Please enter a valid 6-digit OTP', 'error');
       return;
     }
     setLoading(true);
     try {
-      // Verify OTP
       const response = await apiClient.post('auth/verify-otp', { mobile: phoneNumber, otp });
-      if (response.data.statusCode === 201 || response.data.statusCode === 200) {
-        const { accessToken } = response.data.data;
-        setAccessToken(accessToken);
-        apiClient.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
-        // Fetch driver profile
-        try {
-          const profileRes = await apiClient.get('driver-profile/');
-          if (profileRes.data && profileRes.data.data) {
-            // Driver profile exists, go to driver home
-            router.push({ pathname: '/(driver)', params: { isAccountRestored: 'true' } });
-          } else {
-            // No driver profile, prompt to register vehicle
-            Alert.alert('No Driver Profile', 'No driver profile found. Please register your vehicle.', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Register Vehicle', onPress: () => router.push('/registerVehicle') },
-            ]);
-          }
-        } catch (profileErr: any) {
-          // No driver profile, prompt to register vehicle
-          Alert.alert('No Driver Profile', 'No driver profile found. Please register your vehicle.', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Register Vehicle', onPress: () => router.push('/registerVehicle') },
-          ]);
-        }
+      if (response.data.statusCode === 201) {
+        setAccessToken(response.data.data.accessToken);
+        await AsyncStorage.setItem('userRole', 'driver');
+        showToast('Account restored successfully!', 'success');
+        setTimeout(() => router.push('/(driver)'), 1500);
       } else {
-        Alert.alert('Error', 'Invalid OTP. Please try again.');
+        showToast('Invalid OTP. Please try again.', 'error');
       }
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to verify OTP. Please try again.');
+      showToast(err?.response?.data?.message || 'Failed to verify OTP. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleChangeOtp = (text: string) => {
+    const clean = text.replace(/[^0-9]/g, '').slice(0, CODE_LENGTH);
+    setOtp(clean);
+  };
+
+  const handleBoxPress = () => {
+    inputRef.current?.focus();
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-          <ArrowLeft size={24} color="#333" />
-        </TouchableOpacity>
-      </View>
-      <View style={styles.content}>
+      <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+        <ArrowLeft size={24} color="#333" />
+      </TouchableOpacity>
+      <View style={styles.contentContainer}>
         {step === 'phone' ? (
           <>
-            <Text style={styles.title}>Account restoration</Text>
+            <Text style={styles.title}>Account Restoration</Text>
             <Text style={styles.subtitle}>Enter the phone number linked to your previous account</Text>
-            <View style={styles.phoneContainer}>
-              <TouchableOpacity style={styles.countryCodeButton}>
-                <Text style={styles.countryCode}>+977</Text>
-              </TouchableOpacity>
-              <TextInput
-                style={styles.phoneInput}
-                value={phoneNumber}
-                onChangeText={setPhoneNumber}
-                placeholder=""
-                keyboardType="phone-pad"
-                maxLength={10}
-                editable={!loading}
-              />
-            </View>
+            <TextInput
+              style={[styles.input, loading && styles.inputDisabled]}
+              value={phoneNumber}
+              onChangeText={setPhoneNumber}
+              placeholder="Enter your phone number"
+              keyboardType="phone-pad"
+              maxLength={10}
+              editable={!loading}
+              autoFocus
+              placeholderTextColor="#ccc"
+            />
             <TouchableOpacity
-              style={[styles.nextButton, phoneNumber.length > 0 && styles.nextButtonActive]}
+              style={[styles.button, phoneNumber.length > 0 && styles.buttonActive]}
               onPress={handleSendOtp}
               disabled={phoneNumber.length === 0 || loading}
             >
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={[styles.nextButtonText, phoneNumber.length > 0 && styles.nextButtonTextActive]}>Next</Text>}
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={[styles.buttonText, phoneNumber.length > 0 && styles.buttonTextActive]}>Next</Text>}
             </TouchableOpacity>
           </>
         ) : (
           <>
             <Text style={styles.title}>Enter OTP</Text>
             <Text style={styles.subtitle}>Enter the 6-digit OTP sent to your phone</Text>
-            <TextInput
-              style={styles.otpInput}
-              value={otp}
-              onChangeText={setOtp}
-              placeholder="Enter OTP"
-              keyboardType="number-pad"
-              maxLength={6}
-              editable={!loading}
-            />
+            <TouchableOpacity activeOpacity={1} onPress={handleBoxPress} style={styles.codeContainer}>
+              {[...Array(CODE_LENGTH)].map((_, idx) => (
+                <View
+                  key={idx}
+                  style={[styles.codeInput, otp.length === idx && styles.codeInputActive, otp[idx] && styles.codeInputFilled]}
+                >
+                  <Text style={styles.codeDigit}>{otp[idx] || ''}</Text>
+                </View>
+              ))}
+              <TextInput
+                ref={inputRef}
+                value={otp}
+                onChangeText={handleChangeOtp}
+                keyboardType="numeric"
+                maxLength={CODE_LENGTH}
+                style={styles.hiddenInput}
+                autoFocus
+                editable={!loading}
+                caretHidden
+                selection={{ start: otp.length, end: otp.length }}
+                blurOnSubmit={false}
+              />
+            </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.nextButton, otp.length === 6 && styles.nextButtonActive]}
+              style={[styles.button, otp.length === CODE_LENGTH && styles.buttonActive]}
               onPress={handleVerifyOtp}
-              disabled={otp.length !== 6 || loading}
+              disabled={otp.length !== CODE_LENGTH || loading}
             >
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={[styles.nextButtonText, otp.length === 6 && styles.nextButtonTextActive]}>Verify OTP</Text>}
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={[styles.buttonText, otp.length === CODE_LENGTH && styles.buttonTextActive]}>Verify OTP</Text>}
             </TouchableOpacity>
             <TouchableOpacity onPress={handleSendOtp} disabled={loading} style={{ marginTop: 20 }}>
-              <Text style={{ color: '#007AFF', textAlign: 'center' }}>Resend OTP</Text>
+              <Text style={[styles.resendText, loading && styles.resendTextDisabled]}>Resend OTP</Text>
             </TouchableOpacity>
           </>
         )}
       </View>
+      <Toast visible={toast.visible} message={toast.message} type={toast.type} onHide={hideToast} />
+      <ConfirmationModal
+        visible={showBackConfirmation}
+        title={step === 'otp' ? 'Cancel Verification?' : 'Cancel Process?'}
+        message={step === 'otp' ? 'You are currently verifying your OTP. Are you sure you want to cancel this process?' : 'You are currently sending an OTP. Are you sure you want to cancel this process?'}
+        confirmText="Cancel"
+        cancelText="Continue"
+        onConfirm={handleConfirmBack}
+        onCancel={handleCancelBack}
+        type="warning"
+      />
+      <AppModal
+        visible={modal.visible}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        onClose={hideModal}
+        actionText={modal.actionText}
+        onAction={modal.onAction}
+      />
     </SafeAreaView>
   );
 };
@@ -157,98 +217,111 @@ const AccountRestoration = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  header: {
+    backgroundColor: '#fff',
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 20,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
+    padding: 10,
+    marginTop: 40,
+  },
+  contentContainer: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
     marginTop: 30,
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 25,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    textAlign: 'center',
     color: '#333',
-    marginBottom: 12,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#666',
-    lineHeight: 22,
-    marginBottom: 40,
-  },
-  phoneContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginBottom: 40,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  countryCodeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingRight: 12,
-    borderRightWidth: 1,
-    borderRightColor: '#eee',
-  },
-  countryCode: {
-    fontSize: 16,
-    color: '#333',
-    marginLeft: 4,
-  },
-  phoneInput: {
-    flex: 1,
-    fontSize: 16,
-    paddingVertical: 16,
-    paddingLeft: 16,
-    color: '#333',
-  },
-  otpInput: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    fontSize: 20,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    marginBottom: 40,
     textAlign: 'center',
-    letterSpacing: 8,
-    color: '#333',
+    marginBottom: 30,
   },
-  nextButton: {
+  input: {
+    width: '100%',
+    height: 48,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    marginBottom: 15,
+    color: '#000',
+    fontSize: 16,
+    backgroundColor: '#fff',
+  },
+  inputDisabled: {
+    backgroundColor: '#f5f5f5',
+    color: '#999',
+  },
+  button: {
+    width: '100%',
     backgroundColor: '#ccc',
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
+    marginBottom: 20,
   },
-  nextButtonActive: {
+  buttonActive: {
     backgroundColor: '#075B5E',
   },
-  nextButtonText: {
-    fontSize: 18,
+  buttonText: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#999',
   },
-  nextButtonTextActive: {
+  buttonTextActive: {
     color: '#fff',
+  },
+  codeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 30,
+    marginTop: 10,
+    position: 'relative',
+  },
+  codeInput: {
+    width: 45,
+    height: 45,
+    borderWidth: 2,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    textAlign: 'center',
+    marginHorizontal: 5,
+    backgroundColor: '#f8f9fa',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  codeInputActive: {
+    borderColor: '#00809D',
+  },
+  codeInputFilled: {
+    borderColor: '#00809D',
+    backgroundColor: '#e0f7fa',
+  },
+  codeDigit: {
+    fontSize: 18,
+    color: '#333',
+    fontWeight: '600',
+  },
+  hiddenInput: {
+    position: 'absolute',
+    opacity: 0,
+    width: 1,
+    height: 1,
+  },
+  resendText: {
+    color: '#007AFF',
+    textAlign: 'center',
+    fontSize: 16,
+  },
+  resendTextDisabled: {
+    color: '#ccc',
   },
 });
 

@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import apiClient from '../utils/apiClient';
 import Toast from '../../components/ui/Toast';
+import ConfirmationModal from '../../components/ui/ConfirmationModal';
 
 const PhoneInputScreen = () => {
   const router = useRouter();
@@ -12,6 +13,7 @@ const PhoneInputScreen = () => {
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showBackConfirmation, setShowBackConfirmation] = useState(false);
   const [toast, setToast] = useState<{
     visible: boolean;
     message: string;
@@ -98,9 +100,26 @@ const PhoneInputScreen = () => {
     }
   };
 
+  const handleBackPress = () => {
+    if (loading) {
+      setShowBackConfirmation(true);
+    } else {
+      router.back();
+    }
+  };
+
+  const handleConfirmBack = () => {
+    setShowBackConfirmation(false);
+    router.back();
+  };
+
+  const handleCancelBack = () => {
+    setShowBackConfirmation(false);
+  };
+
   return (
     <View style={styles.container}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+      <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
         <Icon name="arrow-left" size={20} color="#000" />
       </TouchableOpacity>
       
@@ -109,32 +128,35 @@ const PhoneInputScreen = () => {
         <Text style={styles.subtitle}>Enter your details to register</Text>
         
         <TextInput
-          style={styles.input}
+          style={[styles.input, loading && styles.inputDisabled]}
           value={firstName}
           onChangeText={setFirstName}
           placeholder="Enter your First Name"
           placeholderTextColor="#ccc"
           autoFocus
           maxLength={30}
+          editable={!loading}
         />
         
         <TextInput
-          style={styles.input}
+          style={[styles.input, loading && styles.inputDisabled]}
           value={lastName}
           onChangeText={setLastName}
           placeholder="Enter your Last Name"
           placeholderTextColor="#ccc"
           maxLength={30}
+          editable={!loading}
         />
         
         <TextInput
-          style={styles.input}
+          style={[styles.input, loading && styles.inputDisabled]}
           value={phone}
           onChangeText={setPhone}
           keyboardType="phone-pad"
           placeholder="Enter your phone number"
           placeholderTextColor="#ccc"
           maxLength={15}
+          editable={!loading}
         />
         
         <Button
@@ -147,8 +169,8 @@ const PhoneInputScreen = () => {
           {loading ? <ActivityIndicator color="#fff" /> : 'Register'}
         </Button>
         
-        <TouchableOpacity onPress={() => router.push('/(auth)/phoneLogin')}>
-          <Text style={styles.link}>Already have an account? Log in</Text>
+        <TouchableOpacity onPress={() => router.push('/(auth)/phoneLogin')} disabled={loading}>
+          <Text style={[styles.link, loading && styles.linkDisabled]}>Already have an account? Log in</Text>
         </TouchableOpacity>
       </View>
       
@@ -160,6 +182,17 @@ const PhoneInputScreen = () => {
         type={toast.type}
         onHide={hideToast}
         duration={4000}
+      />
+
+      <ConfirmationModal
+        visible={showBackConfirmation}
+        title="Cancel Registration?"
+        message="You are currently registering. Are you sure you want to cancel this process?"
+        confirmText="Cancel"
+        cancelText="Continue"
+        onConfirm={handleConfirmBack}
+        onCancel={handleCancelBack}
+        type="warning"
       />
     </View>
   );
@@ -204,6 +237,10 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 16
   },
+  inputDisabled: {
+    backgroundColor: '#f5f5f5',
+    color: '#999',
+  },
   button: { 
     width: '100%', 
     backgroundColor: '#00809D', 
@@ -218,8 +255,70 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
     fontSize: 16
   },
+  linkDisabled: {
+    color: '#ccc',
+  },
   keyboardPlaceholder: { 
     height: 200 
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 20,
+    width: '80%',
+    alignItems: 'center',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginLeft: 10,
+    color: '#333',
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 22,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 10,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalButtonCancel: {
+    backgroundColor: '#666',
+  },
+  modalButtonConfirm: {
+    backgroundColor: '#F44336',
+  },
+  modalButtonCancelText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalButtonConfirmText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

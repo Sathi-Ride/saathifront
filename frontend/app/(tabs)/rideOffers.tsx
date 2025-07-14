@@ -16,6 +16,8 @@ import { rideService, RideOffer } from '../utils/rideService';
 import webSocketService from '../utils/websocketService';
 import { useUserRole } from '../utils/userRoleManager';
 import { userRoleManager } from '../utils/userRoleManager';
+import ProfileImage from '../../components/ProfileImage';
+import * as Haptics from 'expo-haptics';
 
 const { width, height } = Dimensions.get('window');
 
@@ -52,6 +54,9 @@ const RideOffersScreen = () => {
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     setToast({ visible: true, message, type });
+    if (type === 'success') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    else if (type === 'error') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    else Haptics.selectionAsync();
   };
 
   const hideToast = () => {
@@ -215,9 +220,11 @@ const RideOffersScreen = () => {
     <View style={styles.offerCard}>
       <View style={styles.offerHeader}>
         <View style={styles.driverInfo}>
-          <View style={styles.driverAvatar}>
-            <MaterialIcons name="person" size={24} color="#075B5E" />
-          </View>
+          <ProfileImage 
+            photoUrl={item.driver.photo}
+            size={48}
+            fallbackIconColor="#075B5E"
+          />
           <View style={styles.driverDetails}>
             <Text style={styles.driverName}>
               {item.driver.firstName} {item.driver.lastName}
@@ -436,11 +443,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
     marginBottom: 4,
+    marginLeft: 4,
   },
   ratingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 4,
+    marginLeft: 4,
   },
   rating: {
     fontSize: 14,

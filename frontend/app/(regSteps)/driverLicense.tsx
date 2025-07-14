@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, Dimensions, StatusBar, TextInput, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, Dimensions, StatusBar, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import * as ImagePicker from 'expo-image-picker';
 import { useDriverRegistration } from '../DriverRegistrationContext';
+import ConfirmationModal from '../../components/ui/ConfirmationModal';
+import AppModal from '../../components/ui/AppModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -17,50 +19,71 @@ const License = () => {
   const [licenseExpiry, setLicenseExpiry] = useState(registrationData.licenseExpiry || '');
   const [citizenship, setCitizenship] = useState(registrationData.citizenship || '');
   const [citizenshipNumber, setCitizenshipNumber] = useState(registrationData.citizenshipNumber || '');
+  const [loading, setLoading] = useState(false);
+  const [showBackConfirmation, setShowBackConfirmation] = useState(false);
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'info';
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
 
-  const handleAddPhoto = async (type: 'driver_license' | 'national_id_front' | 'national_id_back') => {
+  const showModal = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    setModal({ visible: true, type, title, message });
+  };
+  const hideModal = () => setModal((prev) => ({ ...prev, visible: false }));
+
+  const handleAddPhoto = async (type: string) => {
+    if (loading) return;
+    
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permissionResult.granted === false) {
-      Alert.alert("Permission required", "You need to allow access to your photos to upload an image.");
+      showModal('info', 'Permission required', 'You need to allow access to your photos to upload an image.');
       return;
     }
 
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: 'images',
       allowsEditing: true,
-      aspect: [10, 7],
+      aspect: [4, 3],
       quality: 0.8,
-      base64: false, // Don't convert to base64 automatically
+      base64: false,
     });
 
     if (!pickerResult.canceled) {
-      const uri = pickerResult.assets[0].uri;
-      console.log(`Selected image for ${type}:`, uri);
-      
-      if (type === 'driver_license') {
-        setDriverLicensePhoto(uri);
-      } else if (type === 'national_id_front') {
-        setNationalIdPhoto(uri);
-      } else {
-        setNationalIdBackPhoto(uri);
+      switch (type) {
+        case 'driver_license':
+          setDriverLicensePhoto(pickerResult.assets[0].uri);
+          break;
+        case 'national_id_front':
+          setNationalIdPhoto(pickerResult.assets[0].uri);
+          break;
+        case 'national_id_back':
+          setNationalIdBackPhoto(pickerResult.assets[0].uri);
+          break;
       }
     }
   };
 
   const handleNext = () => {
     if (!driverLicensePhoto || !nationalIdPhoto || !nationalIdBackPhoto) {
-      Alert.alert('Error', 'Please upload all required photos');
+      showModal('error', 'Error', 'Please upload all required photos');
       return;
     }
     if (!licenseNumber.trim() || !licenseExpiry.trim() || !citizenship.trim() || !citizenshipNumber.trim()) {
-      Alert.alert('Error', 'Please fill in all required fields');
+      showModal('error', 'Error', 'Please fill in all required fields');
       return;
     }
     
     // Validate date format
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(licenseExpiry)) {
-      Alert.alert('Error', 'Please enter license expiry date in YYYY-MM-DD format (e.g., 2025-12-31)');
+      showModal('error', 'Error', 'Please enter license expiry date in YYYY-MM-DD format (e.g., 2025-12-31)');
       return;
     }
     
@@ -69,153 +92,197 @@ const License = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (expiryDate < today) {
-      Alert.alert('Error', 'License expiry date cannot be in the past');
+      showModal('error', 'Error', 'License expiry date cannot be in the past');
       return;
     }
     
-    updateRegistrationData({
-      ...registrationData,
-      licenseFrontImgPath: driverLicensePhoto,
-      citizenshipDocFrontImgPath: nationalIdPhoto,
-      citizenshipDocBackImgPath: nationalIdBackPhoto,
-      licenseNum: licenseNumber,
-      licenseExpiry: licenseExpiry,
-      citizenship: citizenship,
-      citizenshipNumber: citizenshipNumber,
-    });
-    router.push('/(regSteps)/registerSelfie');
+    setLoading(true);
+    try {
+      updateRegistrationData({
+        ...registrationData,
+        licenseFrontImgPath: driverLicensePhoto,
+        citizenshipDocFrontImgPath: nationalIdPhoto,
+        citizenshipDocBackImgPath: nationalIdBackPhoto,
+        licenseNum: licenseNumber,
+        licenseExpiry: licenseExpiry,
+        citizenship: citizenship,
+        citizenshipNumber: citizenshipNumber,
+      });
+      router.push('/(regSteps)/registerSelfie');
+    } catch (error) {
+      showModal('error', 'Error', 'Failed to save license information');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleBack = () => {
+  const handleBackPress = () => {
+    if (loading) {
+      setShowBackConfirmation(true);
+    } else {
+      router.back();
+    }
+  };
+
+  const handleConfirmBack = () => {
+    setShowBackConfirmation(false);
     router.back();
   };
 
+  const handleCancelBack = () => {
+    setShowBackConfirmation(false);
+  };
+
   return (
-    <ScrollView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack}>
-          <Icon name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Driver License</Text>
-      </View>
-      <View style={styles.content}>
-        {/* License Information */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>License Information</Text>
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>License Number</Text>
-            <TextInput
-              style={styles.input}
-              value={licenseNumber}
-              onChangeText={setLicenseNumber}
-              placeholder="Enter license number"
-            />
-          </View>
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>License Expiry Date</Text>
-            <TextInput
-              style={styles.input}
-              value={licenseExpiry}
-              onChangeText={setLicenseExpiry}
-              placeholder="YYYY-MM-DD (e.g., 2025-12-31)"
-              keyboardType="numeric"
-            />
-            <Text style={styles.inputHint}>Format: YYYY-MM-DD</Text>
-          </View>
+    <View style={styles.container}>
+      <ScrollView style={styles.scrollView}>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBackPress}>
+            <Icon name="arrow-back" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Driver License</Text>
         </View>
-
-        {/* Citizenship Information */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Citizenship Information</Text>
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Citizenship Type</Text>
-            <TextInput
-              style={styles.input}
-              value={citizenship}
-              onChangeText={setCitizenship}
-              placeholder="e.g., Nepali, Foreign"
-            />
-          </View>
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Citizenship Number</Text>
-            <TextInput
-              style={styles.input}
-              value={citizenshipNumber}
-              onChangeText={setCitizenshipNumber}
-              placeholder="Enter citizenship number"
-            />
-          </View>
-        </View>
-
-        {/* Driver License Photo */}
-        <View style={styles.photoSection}>
-          <Text style={styles.sectionTitle}>Front of Driver's License</Text>
-          <View style={styles.imagePlaceholder}>
-            {driverLicensePhoto ? (
-              <Image source={{ uri: driverLicensePhoto }} style={styles.image} />
-            ) : (
-              <Image
-                source={require('../../assets/images/driverlicenseplaceholder.jpg')}
-                style={styles.image}
-                resizeMode="contain"
+        <View style={styles.content}>
+          {/* License Information */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>License Information</Text>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>License Number</Text>
+              <TextInput
+                style={[styles.input, loading && styles.inputDisabled]}
+                value={licenseNumber}
+                onChangeText={setLicenseNumber}
+                placeholder="Enter license number"
+                editable={!loading}
               />
-            )}
+            </View>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>License Expiry Date</Text>
+              <TextInput
+                style={[styles.input, loading && styles.inputDisabled]}
+                value={licenseExpiry}
+                onChangeText={setLicenseExpiry}
+                placeholder="YYYY-MM-DD (e.g., 2025-12-31)"
+                keyboardType="numeric"
+                editable={!loading}
+              />
+              <Text style={styles.inputHint}>Format: YYYY-MM-DD</Text>
+            </View>
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto('driver_license')}>
-            <Text style={styles.addButtonText}>Add a photo</Text>
+
+          {/* Citizenship Information */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Citizenship Information</Text>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Citizenship Type</Text>
+              <TextInput
+                style={[styles.input, loading && styles.inputDisabled]}
+                value={citizenship}
+                onChangeText={setCitizenship}
+                placeholder="e.g., Nepali, Foreign"
+                editable={!loading}
+              />
+            </View>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Citizenship Number</Text>
+              <TextInput
+                style={[styles.input, loading && styles.inputDisabled]}
+                value={citizenshipNumber}
+                onChangeText={setCitizenshipNumber}
+                placeholder="Enter citizenship number"
+                editable={!loading}
+              />
+            </View>
+          </View>
+
+          {/* Driver License Photo */}
+          <View style={styles.photoSection}>
+            <Text style={styles.sectionTitle}>Front of Driver's License</Text>
+            <View style={styles.imagePlaceholder}>
+              {driverLicensePhoto ? (
+                <Image source={{ uri: driverLicensePhoto }} style={styles.image} />
+              ) : (
+                <Image
+                  source={require('../../assets/images/driverlicenseplaceholder.jpg')}
+                  style={styles.image}
+                  resizeMode="contain"
+                />
+              )}
+            </View>
+            <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto('driver_license')} disabled={loading}>
+              <Text style={[styles.addButtonText, loading && styles.addButtonTextDisabled]}>Add a photo</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* National ID Front */}
+          <View style={styles.photoSection}>
+            <Text style={styles.sectionTitle}>Front of National ID</Text>
+            <View style={styles.imagePlaceholder}>
+              {nationalIdPhoto ? (
+                <Image source={{ uri: nationalIdPhoto }} style={styles.image} />
+              ) : (
+                <Image
+                  source={require('../../assets/images/nidplaceholder.png')}
+                  style={styles.image}
+                  resizeMode="contain"
+                />
+              )}
+            </View>
+            <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto('national_id_front')} disabled={loading}>
+              <Text style={[styles.addButtonText, loading && styles.addButtonTextDisabled]}>Add a photo</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* National ID Back */}
+          <View style={styles.photoSection}>
+            <Text style={styles.sectionTitle}>Back of National ID</Text>
+            <View style={styles.imagePlaceholder}>
+              {nationalIdBackPhoto ? (
+                <Image source={{ uri: nationalIdBackPhoto }} style={styles.image} />
+              ) : (
+                <Image
+                  source={require('../../assets/images/nidplaceholder.png')}
+                  style={styles.image}
+                  resizeMode="contain"
+                />
+              )}
+            </View>
+            <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto('national_id_back')} disabled={loading}>
+              <Text style={[styles.addButtonText, loading && styles.addButtonTextDisabled]}>Add a photo</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.nextButton, loading && styles.nextButtonDisabled]}
+            onPress={handleNext}
+            disabled={loading}
+          >
+            <Text style={[styles.nextButtonText, loading && styles.nextButtonTextDisabled]}>
+              {loading ? 'Saving...' : 'Next'}
+            </Text>
           </TouchableOpacity>
         </View>
-        
-        {/* National ID Front */}
-        <View style={styles.photoSection}>
-          <Text style={styles.sectionTitle}>National ID Card (Front Side)</Text>
-          <View style={styles.imagePlaceholder}>
-            {nationalIdPhoto ? (
-              <Image source={{ uri: nationalIdPhoto }} style={styles.image} />
-            ) : (
-              <Image
-                source={require('../../assets/images/nidplaceholder.png')}
-                style={styles.image}
-                resizeMode="contain"
-              />
-            )}
-          </View>
-          <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto('national_id_front')}>
-            <Text style={styles.addButtonText}>Add a photo</Text>
-          </TouchableOpacity>
-        </View>
+      </ScrollView>
 
-        {/* National ID Back */}
-        <View style={styles.photoSection}>
-          <Text style={styles.sectionTitle}>National ID Card (Back Side)</Text>
-          <View style={styles.imagePlaceholder}>
-            {nationalIdBackPhoto ? (
-              <Image source={{ uri: nationalIdBackPhoto }} style={styles.image} />
-            ) : (
-              <Image
-                source={require('../../assets/images/nidplaceholder.png')}
-                style={styles.image}
-                resizeMode="contain"
-              />
-            )}
-          </View>
-          <TouchableOpacity style={styles.addButton} onPress={() => handleAddPhoto('national_id_back')}>
-            <Text style={styles.addButtonText}>Add a photo</Text>
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.saveButton, (!driverLicensePhoto || !nationalIdPhoto || !nationalIdBackPhoto || !licenseNumber || !licenseExpiry || !citizenship || !citizenshipNumber) && styles.saveButtonDisabled]}
-          onPress={handleNext}
-          disabled={!driverLicensePhoto || !nationalIdPhoto || !nationalIdBackPhoto || !licenseNumber || !licenseExpiry || !citizenship || !citizenshipNumber}
-        >
-          <Text style={[styles.saveButtonText, (!driverLicensePhoto || !nationalIdPhoto || !nationalIdBackPhoto || !licenseNumber || !licenseExpiry || !citizenship || !citizenshipNumber) && styles.saveButtonTextDisabled]}>
-            Next
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+      <ConfirmationModal
+        visible={showBackConfirmation}
+        title="Cancel License Setup?"
+        message="You are currently setting up your license information. Are you sure you want to cancel this process?"
+        confirmText="Cancel"
+        cancelText="Continue"
+        onConfirm={handleConfirmBack}
+        onCancel={handleCancelBack}
+        type="warning"
+      />
+      <AppModal
+        visible={modal.visible}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        onClose={hideModal}
+      />
+    </View>
   );
 };
 
@@ -224,96 +291,112 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
+  scrollView: {
+    flex: 1,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    paddingHorizontal: 20,
+    paddingTop: 50,
+    paddingBottom: 20,
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    marginLeft: 20,
     color: '#333',
-    marginLeft: 16,
   },
   content: {
-    padding: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 30,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: 30,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#333',
-    marginBottom: 16,
+    marginBottom: 15,
   },
   inputContainer: {
-    marginBottom: 16,
+    marginBottom: 15,
   },
   inputLabel: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 8,
+    marginBottom: 5,
   },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 8,
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 16,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#fff',
+  },
+  inputDisabled: {
+    backgroundColor: '#f5f5f5',
+    color: '#999',
+    borderColor: '#ccc',
   },
   inputHint: {
     fontSize: 12,
     color: '#999',
-    marginTop: 4,
+    marginTop: 5,
   },
   photoSection: {
-    marginBottom: 24,
+    marginBottom: 30,
   },
   imagePlaceholder: {
     width: '100%',
     height: 200,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    marginBottom: 12,
-    overflow: 'hidden',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    marginBottom: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
   image: {
     width: '100%',
     height: '100%',
+    borderRadius: 8,
   },
   addButton: {
-    backgroundColor: '#075B5E',
+    backgroundColor: '#3D74B6',
     paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     borderRadius: 8,
     alignItems: 'center',
   },
   addButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  saveButton: {
+  addButtonTextDisabled: {
+    color: '#ccc',
+  },
+  nextButton: {
     backgroundColor: '#075B5E',
-    paddingVertical: 16,
-    borderRadius: 12,
+    paddingVertical: 15,
+    borderRadius: 8,
     alignItems: 'center',
     marginTop: 20,
   },
-  saveButtonDisabled: {
+  nextButtonDisabled: {
     backgroundColor: '#ccc',
   },
-  saveButtonText: {
+  nextButtonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
   },
-  saveButtonTextDisabled: {
+  nextButtonTextDisabled: {
     color: '#999',
   },
 });

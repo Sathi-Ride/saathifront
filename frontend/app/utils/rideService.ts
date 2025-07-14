@@ -21,6 +21,7 @@ export interface Ride {
     firstName: string;
     lastName: string;
     mobile: string;
+    photo?: string;
   };
   driver?: {
     _id: string;
@@ -28,6 +29,7 @@ export interface Ride {
     lastName: string;
     mobile: string;
     rating: number;
+    photo?: string;
   };
   vehicleType: {
     _id: string;
@@ -94,6 +96,7 @@ export interface RideOffer {
     lastName: string;
     mobile: string;
     rating: number;
+    photo?: string;
     vehicleDetails: {
       vehicleModel: string;
       vehicleRegNum: string;
@@ -115,6 +118,18 @@ export interface VehicleType {
 }
 
 class RideService {
+  // Helper function to calculate distance between two coordinates using Haversine formula
+  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
   // Simulated ride progress tracking
   private rideProgressSimulation: {
     [rideId: string]: {
@@ -149,15 +164,34 @@ class RideService {
   // Create a new ride request
   async createRide(rideData: RideRequest): Promise<Ride | null> {
     try {
+      // Validate that pickup and dropoff locations are not the same
+      const pickupLat = Number(rideData.pickUpLat);
+      const pickupLng = Number(rideData.pickUpLng);
+      const dropOffLat = Number(rideData.dropOffLat);
+      const dropOffLng = Number(rideData.dropOffLng);
+      
+      // Calculate distance between pickup and dropoff using Haversine formula
+      const distance = this.calculateDistance(pickupLat, pickupLng, dropOffLat, dropOffLng);
+      
+      // If distance is very small (less than 0.1 km = 100 meters), consider them the same
+      if (distance < 0.1) {
+        throw new Error('You cannot have the same pickup and dropoff location');
+      }
+      
+      // Also check if the location names are the same (case-insensitive)
+      if (rideData.pickUpLocation.toLowerCase().trim() === rideData.dropOffLocation.toLowerCase().trim()) {
+        throw new Error('You cannot have the same pickup and dropoff location');
+      }
+      
       // Ensure coordinates are numbers
       const requestData = {
         vehicleType: rideData.vehicleType,
         pickUpLocation: rideData.pickUpLocation,
-        pickUpLat: Number(rideData.pickUpLat),
-        pickUpLng: Number(rideData.pickUpLng),
+        pickUpLat: pickupLat,
+        pickUpLng: pickupLng,
         dropOffLocation: rideData.dropOffLocation,
-        dropOffLat: Number(rideData.dropOffLat),
-        dropOffLng: Number(rideData.dropOffLng),
+        dropOffLat: dropOffLat,
+        dropOffLng: dropOffLng,
         offerPrice: Number(rideData.offerPrice),
         comments: rideData.comments,
         pickUpTime: rideData.pickUpTime
@@ -270,7 +304,7 @@ class RideService {
             firstName: ride.driver.firstName,
             lastName: ride.driver.lastName,
             mobile: ride.driver.mobile,
-            rating: 0,
+            rating: ride.driver.rating || ride.driverProfile?.rating || 0,
           } : undefined,
           vehicleType: {
             _id: ride.vehicleType,
@@ -312,7 +346,7 @@ class RideService {
             firstName: offer.driver.firstName,
             lastName: offer.driver.lastName,
             mobile: offer.driver.mobile,
-            rating: 0, // Not provided in new API
+            rating: offer.driverProfile?.rating || offer.driver.rating || 0,
             vehicleDetails: {
               vehicleModel: offer.driverProfile?.vehicleModel || '',
               vehicleRegNum: offer.driverProfile?.vehicleRegNum || '',
@@ -828,6 +862,18 @@ class RideService {
       lat: start.lat + (end.lat - start.lat) * factor,
       lng: start.lng + (end.lng - start.lng) * factor,
     };
+  }
+
+  async deleteRide(rideId: string): Promise<void> {
+    try {
+      const response = await apiClient.delete(`/rides/${rideId}`);
+      if (response.data.statusCode !== 200) {
+        throw new Error(response.data.message || 'Failed to delete ride');
+      }
+    } catch (error) {
+      console.error('Error deleting ride:', error);
+      throw error;
+    }
   }
 }
 

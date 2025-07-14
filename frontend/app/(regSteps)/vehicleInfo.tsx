@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions, StatusBar, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, StatusBar, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import apiClient from '../utils/apiClient';
 import { useDriverRegistration } from '../DriverRegistrationContext';
+import ConfirmationModal from '../../components/ui/ConfirmationModal';
+import AppModal from '../../components/ui/AppModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -11,12 +13,44 @@ const VehicleInfo = () => {
   const router = useRouter();
   const { registrationData } = useDriverRegistration();
   const [loading, setLoading] = useState(false);
+  const [showBackConfirmation, setShowBackConfirmation] = useState(false);
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'info';
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
 
-  const handleBack = () => {
+  const showModal = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    setModal({ visible: true, type, title, message });
+  };
+  const hideModal = () => setModal((prev) => ({ ...prev, visible: false }));
+
+  const handleBackPress = () => {
+    if (loading) {
+      setShowBackConfirmation(true);
+    } else {
+      router.back();
+    }
+  };
+
+  const handleConfirmBack = () => {
+    setShowBackConfirmation(false);
     router.back();
   };
 
+  const handleCancelBack = () => {
+    setShowBackConfirmation(false);
+  };
+
   const handleNavigate = (screen: string) => {
+    if (loading) return;
+    
     switch (screen) {
       case 'brand':
         router.push('/(vehDetails)/vBrand');
@@ -55,41 +89,50 @@ const VehicleInfo = () => {
 
   const handleSubmit = () => {
     if (!isComplete) {
-      Alert.alert('Error', 'Please complete all registration steps.');
+      showModal('error', 'Error', 'Please complete all registration steps.');
       return;
     }
-    router.push('/(regSteps)/reviewAndSubmit');
+    
+    setLoading(true);
+    try {
+      router.push('/(regSteps)/reviewAndSubmit');
+    } catch (error) {
+      showModal('error', 'Error', 'Failed to proceed to review');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack}>
+        <TouchableOpacity onPress={handleBackPress}>
           <Icon name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Vehicle Info</Text>
-        <TouchableOpacity onPress={handleBack} style={styles.closeButton}>
+        <TouchableOpacity onPress={handleBackPress} style={styles.closeButton}>
           <Text style={styles.closeText}>Close</Text>
         </TouchableOpacity>
       </View>
       <View style={styles.content}>
-        <TouchableOpacity style={styles.option} onPress={() => handleNavigate('brand')}>
-          <Text style={styles.optionText}>Brand</Text>
-          <Icon name="chevron-right" size={24} color="#075B5E" />
+        <TouchableOpacity style={styles.option} onPress={() => handleNavigate('brand')} disabled={loading}>
+          <Text style={[styles.optionText, loading && styles.optionTextDisabled]}>Brand</Text>
+          <Icon name="chevron-right" size={24} color={loading ? "#ccc" : "#075B5E"} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.option} onPress={() => handleNavigate('registrationPlate')}>
-          <Text style={styles.optionText}>Registration plate</Text>
-          <Icon name="chevron-right" size={24} color="#075B5E" />
+        <TouchableOpacity style={styles.option} onPress={() => handleNavigate('registrationPlate')} disabled={loading}>
+          <Text style={[styles.optionText, loading && styles.optionTextDisabled]}>Registration plate</Text>
+          <Icon name="chevron-right" size={24} color={loading ? "#ccc" : "#075B5E"} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.option} onPress={() => handleNavigate('picture')}>
-          <Text style={styles.optionText}>Picture</Text>
-          <Icon name="chevron-right" size={24} color="#075B5E" />
+        <TouchableOpacity style={styles.option} onPress={() => handleNavigate('picture')} disabled={loading}>
+          <Text style={[styles.optionText, loading && styles.optionTextDisabled]}>Picture</Text>
+          <Icon name="chevron-right" size={24} color={loading ? "#ccc" : "#075B5E"} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.option} onPress={() => handleNavigate('billbook')}>
-          <Text style={styles.optionText}>Billbook</Text>
-          <Icon name="chevron-right" size={24} color="#075B5E" />
+        <TouchableOpacity style={styles.option} onPress={() => handleNavigate('billbook')} disabled={loading}>
+          <Text style={[styles.optionText, loading && styles.optionTextDisabled]}>Billbook</Text>
+          <Icon name="chevron-right" size={24} color={loading ? "#ccc" : "#075B5E"} />
         </TouchableOpacity>
+        
         <TouchableOpacity
           style={[styles.doneButton, (!isComplete || loading) && { backgroundColor: '#ccc' }]}
           onPress={handleSubmit}
@@ -102,6 +145,24 @@ const VehicleInfo = () => {
           )}
         </TouchableOpacity>
       </View>
+
+      <ConfirmationModal
+        visible={showBackConfirmation}
+        title="Cancel Vehicle Setup?"
+        message="You are currently setting up your vehicle information. Are you sure you want to cancel this process?"
+        confirmText="Cancel"
+        cancelText="Continue"
+        onConfirm={handleConfirmBack}
+        onCancel={handleCancelBack}
+        type="warning"
+      />
+      <AppModal
+        visible={modal.visible}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        onClose={hideModal}
+      />
     </View>
   );
 };
@@ -110,68 +171,63 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    paddingTop: 30,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
+    paddingTop: 50,
     paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-    backgroundColor: '#fff',
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#333',
   },
   closeButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    padding: 8,
   },
   closeText: {
+    color: '#075B5E',
     fontSize: 16,
-    color: '#333',
-    fontWeight: '500',
+    fontWeight: '600',
   },
   content: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    margin: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingHorizontal: 20,
+    paddingBottom: 30,
   },
   option: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
   },
   optionText: {
     fontSize: 16,
     color: '#333',
     fontWeight: '500',
   },
+  optionTextDisabled: {
+    color: '#ccc',
+  },
   doneButton: {
     backgroundColor: '#075B5E',
-    borderRadius: 25,
-    paddingVertical: 16,
+    paddingVertical: 15,
+    borderRadius: 8,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 30,
   },
   doneButtonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
   },
 });

@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, Status
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useDriverRegistration } from '../DriverRegistrationContext';
+import AppModal from '../../components/ui/AppModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -10,6 +11,22 @@ const RegistrationPlate = () => {
   const router = useRouter();
   const { registrationData, updateRegistrationData } = useDriverRegistration();
   const [plateNumber, setPlateNumber] = useState(registrationData.vehicleRegNum || '');
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'info';
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
+
+  const showModal = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    setModal({ visible: true, type, title, message });
+  };
+  const hideModal = () => setModal((prev) => ({ ...prev, visible: false }));
 
   const handleBack = () => {
     router.back();
@@ -17,7 +34,7 @@ const RegistrationPlate = () => {
 
   const handleDone = () => {
     if (!plateNumber.trim()) {
-      Alert.alert('Error', 'Please enter a registration plate number');
+      showModal('error', 'Error', 'Please enter a registration plate number');
       return;
     }
     updateRegistrationData({
@@ -53,6 +70,13 @@ const RegistrationPlate = () => {
           </Text>
         </TouchableOpacity>
       </View>
+      <AppModal
+        visible={modal.visible}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        onClose={hideModal}
+      />
     </View>
   );
 };
@@ -72,6 +96,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
     backgroundColor: '#fff',
+    marginTop:34,
   },
   headerTitle: {
     fontSize: 20,

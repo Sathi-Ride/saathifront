@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import apiClient from '../utils/apiClient';
 import Toast from '../../components/ui/Toast';
+import ConfirmationModal from '../../components/ui/ConfirmationModal';
 
 const PhoneLoginScreen = () => {
   const router = useRouter();
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showBackConfirmation, setShowBackConfirmation] = useState(false);
   const [toast, setToast] = useState<{
     visible: boolean;
     message: string;
@@ -74,9 +76,26 @@ const PhoneLoginScreen = () => {
     }
   };
 
+  const handleBackPress = () => {
+    if (loading) {
+      setShowBackConfirmation(true);
+    } else {
+      router.back();
+    }
+  };
+
+  const handleConfirmBack = () => {
+    setShowBackConfirmation(false);
+    router.back();
+  };
+
+  const handleCancelBack = () => {
+    setShowBackConfirmation(false);
+  };
+
   return (
     <View style={styles.container}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+      <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
         <Icon name="arrow-left" size={20} color="#000" />
       </TouchableOpacity>
       
@@ -85,7 +104,7 @@ const PhoneLoginScreen = () => {
         <Text style={styles.subtitle}>Enter your phone number to proceed</Text>
         
         <TextInput
-          style={styles.input}
+          style={[styles.input, loading && styles.inputDisabled]}
           value={phone}
           onChangeText={setPhone}
           keyboardType="phone-pad"
@@ -93,6 +112,7 @@ const PhoneLoginScreen = () => {
           placeholderTextColor="#ccc"
           autoFocus
           maxLength={15}
+          editable={!loading}
         />
         
         <Button
@@ -105,8 +125,8 @@ const PhoneLoginScreen = () => {
           {loading ? <ActivityIndicator color="#fff" /> : 'Send OTP'}
         </Button>
         
-        <TouchableOpacity onPress={() => router.push('/(auth)/phoneRegister')}>
-          <Text style={styles.link}>Don't have an account? Register</Text>
+        <TouchableOpacity onPress={() => router.push('/(auth)/phoneRegister')} disabled={loading}>
+          <Text style={[styles.link, loading && styles.linkDisabled]}>Don't have an account? Register</Text>
         </TouchableOpacity>
       </View>
       
@@ -118,6 +138,17 @@ const PhoneLoginScreen = () => {
         type={toast.type}
         onHide={hideToast}
         duration={4000}
+      />
+
+      <ConfirmationModal
+        visible={showBackConfirmation}
+        title="Cancel Process?"
+        message="You are currently sending an OTP. Are you sure you want to cancel this process?"
+        confirmText="Cancel"
+        cancelText="Continue"
+        onConfirm={handleConfirmBack}
+        onCancel={handleCancelBack}
+        type="warning"
       />
     </View>
   );
@@ -162,6 +193,10 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 16
   },
+  inputDisabled: {
+    backgroundColor: '#f5f5f5',
+    color: '#999',
+  },
   button: { 
     width: '100%', 
     backgroundColor: '#00809D', 
@@ -175,6 +210,9 @@ const styles = StyleSheet.create({
     marginTop: 15, 
     textDecorationLine: 'underline',
     fontSize: 16
+  },
+  linkDisabled: {
+    color: '#ccc',
   },
   keyboardPlaceholder: { 
     height: 200 

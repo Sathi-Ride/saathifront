@@ -1,167 +1,188 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, StatusBar, Alert, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, StatusBar, ScrollView, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useDriverRegistration } from '../DriverRegistrationContext';
-
-const { width, height } = Dimensions.get('window');
+import ConfirmationModal from '../../components/ui/ConfirmationModal';
 
 const Brand = () => {
   const router = useRouter();
   const { registrationData, updateRegistrationData } = useDriverRegistration();
-  const [brand, setBrand] = useState(registrationData.vehicleMake || '');
+  const [brand, setBrand] = useState(registrationData.vehicleBrand || '');
   const [model, setModel] = useState(registrationData.vehicleModel || '');
   const [year, setYear] = useState(registrationData.vehicleYear || '');
-  const [color, setColor] = useState(registrationData.vehicleColor || '');
+  const [loading, setLoading] = useState(false);
+  const [showBackConfirmation, setShowBackConfirmation] = useState(false);
 
   const handleBack = () => {
+    if (loading) {
+      setShowBackConfirmation(true);
+    } else {
+      router.back();
+    }
+  };
+
+  const handleConfirmBack = () => {
+    setShowBackConfirmation(false);
     router.back();
   };
 
-  const handleDone = () => {
-    if (!brand.trim()) {
-      Alert.alert('Error', 'Please enter a brand');
-      return;
-    }
-    if (!model.trim()) {
-      Alert.alert('Error', 'Please enter a model');
-      return;
-    }
-    if (!year.trim()) {
-      Alert.alert('Error', 'Please enter a year');
-      return;
-    }
-    if (!color.trim()) {
-      Alert.alert('Error', 'Please enter a color');
-      return;
-    }
-    
-    // Validate year range
-    const yearNum = parseInt(year);
-    if (isNaN(yearNum) || yearNum < 1900 || yearNum > 2025) {
-      Alert.alert('Error', 'Please enter a valid year between 1900 and 2025');
-      return;
-    }
-    
-    updateRegistrationData({
-      ...registrationData,
-      vehicleMake: brand,
-      vehicleModel: model,
-      vehicleYear: yearNum, // Store as number
-      vehicleColor: color,
-    });
-    router.push('/(vehDetails)/regPlate');
+  const handleCancelBack = () => {
+    setShowBackConfirmation(false);
   };
 
+  const handleSave = async () => {
+    if (!brand.trim() || !model.trim() || !year.trim()) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      updateRegistrationData({
+        vehicleBrand: brand,
+        vehicleModel: model,
+        vehicleYear: year,
+      });
+      
+      router.back();
+    } catch (error) {
+      // Handle error
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isFormValid = brand.trim() && model.trim() && year.trim();
+
   return (
-    <ScrollView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack}>
-          <Icon name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Vehicle Details</Text>
-        <TouchableOpacity onPress={handleBack} style={styles.closeButton}>
-          <Text style={styles.closeText}>Close</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.content}>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Vehicle Information</Text>
-          
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Brand</Text>
-            <TextInput
-              style={styles.input}
-              value={brand}
-              onChangeText={setBrand}
-              placeholder="e.g., Honda, Toyota, Suzuki"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Model</Text>
-            <TextInput
-              style={styles.input}
-              value={model}
-              onChangeText={setModel}
-              placeholder="e.g., Civic, Corolla, Swift"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Year</Text>
-            <TextInput
-              style={styles.input}
-              value={year}
-              onChangeText={setYear}
-              placeholder="e.g., 2020"
-              keyboardType="numeric"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Color</Text>
-            <TextInput
-              style={styles.input}
-              value={color}
-              onChangeText={setColor}
-              placeholder="e.g., Red, Blue, White"
-            />
-          </View>
+    <View style={styles.container}>
+      <ScrollView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBack} disabled={loading}>
+            <Icon name="arrow-back" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Brand Details</Text>
+          <TouchableOpacity onPress={handleBack} style={styles.closeButton} disabled={loading}>
+            <Text style={styles.closeText}>Close</Text>
+          </TouchableOpacity>
         </View>
+        <View style={styles.content}>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Vehicle Information</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Brand</Text>
+              <TextInput
+                style={[styles.input, loading && styles.inputDisabled]}
+                value={brand}
+                onChangeText={setBrand}
+                placeholder="e.g., Honda, Toyota, Suzuki"
+                editable={!loading}
+              />
+            </View>
 
-        <TouchableOpacity
-          style={[styles.doneButton, (!brand.trim() || !model.trim() || !year.trim() || !color.trim()) && styles.doneButtonDisabled]}
-          onPress={handleDone}
-          disabled={!brand.trim() || !model.trim() || !year.trim() || !color.trim()}
-        >
-          <Text style={[styles.doneButtonText, (!brand.trim() || !model.trim() || !year.trim() || !color.trim()) && styles.doneButtonTextDisabled]}>
-            Next
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Model</Text>
+              <TextInput
+                style={[styles.input, loading && styles.inputDisabled]}
+                value={model}
+                onChangeText={setModel}
+                placeholder="e.g., Civic, Corolla, Swift"
+                editable={!loading}
+              />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Year</Text>
+              <TextInput
+                style={[styles.input, loading && styles.inputDisabled]}
+                value={year}
+                onChangeText={setYear}
+                placeholder="e.g., 2020"
+                keyboardType="numeric"
+                editable={!loading}
+              />
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.saveButton, (!isFormValid || loading) && styles.saveButtonDisabled]}
+            onPress={handleSave}
+            disabled={!isFormValid || loading}
+          >
+            {loading ? (
+              <Text style={styles.saveButtonText}>Saving...</Text>
+            ) : (
+              <Text style={styles.saveButtonText}>Save</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+
+      <ConfirmationModal
+        visible={showBackConfirmation}
+        title="Cancel Process?"
+        message="You are currently saving vehicle information. Are you sure you want to cancel this process?"
+        confirmText="Cancel"
+        cancelText="Continue"
+        onConfirm={handleConfirmBack}
+        onCancel={handleCancelBack}
+        type="warning"
+      />
+    </View>
   );
-};
+  };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#f8f9fa',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingVertical: 16,
+    backgroundColor: '#f8f9fa',
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#e9ecef',
+    marginTop: 30,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
     color: '#333',
   },
   closeButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    padding: 8,
   },
   closeText: {
     fontSize: 16,
-    color: '#333',
-    fontWeight: '500',
+    color: '#075B5E',
+    fontWeight: '600',
   },
   content: {
-    padding: 16,
+    padding: 20,
   },
   section: {
-    marginBottom: 24,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#333',
     marginBottom: 16,
   },
@@ -170,7 +191,8 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 14,
-    color: '#666',
+    fontWeight: '600',
+    color: '#333',
     marginBottom: 8,
   },
   input: {
@@ -179,25 +201,32 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    backgroundColor: '#f9f9f9',
+    color: '#333',
+    backgroundColor: '#fff',
   },
-  doneButton: {
+  inputDisabled: {
+    backgroundColor: '#f5f5f5',
+    color: '#999',
+    borderColor: '#ccc',
+  },
+  saveButton: {
     backgroundColor: '#075B5E',
-    paddingVertical: 16,
     borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  doneButtonDisabled: {
+  saveButtonDisabled: {
     backgroundColor: '#ccc',
   },
-  doneButtonText: {
+  saveButtonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
-  },
-  doneButtonTextDisabled: {
-    color: '#999',
   },
 });
 

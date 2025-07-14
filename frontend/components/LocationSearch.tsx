@@ -20,6 +20,7 @@ interface LocationSearchProps {
   onLocationSelect: (place: GoogleMapsPlace) => void;
   iconColor?: string;
   showSavedAddresses?: boolean;
+  disabled?: boolean;
 }
 
 const LocationSearch: React.FC<LocationSearchProps> = ({
@@ -29,6 +30,7 @@ const LocationSearch: React.FC<LocationSearchProps> = ({
   onLocationSelect,
   iconColor = '#075B5E',
   showSavedAddresses = true,
+  disabled = false,
 }) => {
   const [searchResults, setSearchResults] = useState<GoogleMapsPlace[]>([]);
   const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
@@ -202,14 +204,15 @@ const LocationSearch: React.FC<LocationSearchProps> = ({
   return (
     <View style={styles.container}>
       <TouchableOpacity
-        style={styles.inputContainer}
-        onPress={() => setShowModal(true)}
+        style={[styles.inputContainer, disabled && styles.inputContainerDisabled]}
+        onPress={() => !disabled && setShowModal(true)}
+        disabled={disabled}
       >
-        <MaterialIcons name="search" size={20} color={iconColor} style={styles.searchIcon} />
-        <Text style={styles.inputText} numberOfLines={1}>
+        <MaterialIcons name="search" size={20} color={disabled ? "#ccc" : iconColor} style={styles.searchIcon} />
+        <Text style={[styles.inputText, disabled && styles.inputTextDisabled]} numberOfLines={1}>
           {value || placeholder}
         </Text>
-        <MaterialIcons name="keyboard-arrow-down" size={20} color="#666" />
+        <MaterialIcons name="keyboard-arrow-down" size={20} color={disabled ? "#ccc" : "#666"} />
       </TouchableOpacity>
 
       <Modal
@@ -311,6 +314,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: '#333',
+  },
+  inputTextDisabled: {
+    color: '#ccc',
+  },
+  inputContainerDisabled: {
+    backgroundColor: '#f5f5f5',
+    borderColor: '#e0e0e0',
   },
   modalContainer: {
     flex: 1,

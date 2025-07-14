@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, StatusBar, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, StatusBar, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { TextInput, Button } from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useDriverRegistration } from '../DriverRegistrationContext';
+import ConfirmationModal from '../../components/ui/ConfirmationModal';
+import AppModal from '../../components/ui/AppModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -16,23 +18,55 @@ const ProfileSettingsScreen = () => {
   const [email, setEmail] = useState(registrationData.email || '');
   const [city, setCity] = useState(registrationData.city || '');
   const [profileImage, setProfileImage] = useState<string | null>(registrationData.profileImage || null);
+  const [loading, setLoading] = useState(false);
+  const [showBackConfirmation, setShowBackConfirmation] = useState(false);
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'info';
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
+
+  const showModal = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    setModal({ visible: true, type, title, message });
+  };
+  const hideModal = () => setModal((prev) => ({ ...prev, visible: false }));
 
   const handleSave = () => {
-    updateRegistrationData({
-      ...registrationData,
-      firstName: name,
-      lastName,
-      email,
-      city,
-      profileImage,
-    });
-    router.push('/(regSteps)/driverLicense');
+    if (!name.trim() || !lastName.trim() || !email.trim() || !city.trim()) {
+      showModal('error', 'Error', 'Please fill in all required fields');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      updateRegistrationData({
+        ...registrationData,
+        firstName: name,
+        lastName,
+        email,
+        city,
+        profileImage,
+      });
+      router.push('/(regSteps)/driverLicense');
+    } catch (error) {
+      showModal('error', 'Error', 'Failed to save profile information');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleImageUpload = async () => {
+    if (loading) return;
+    
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permissionResult.granted === false) {
-      Alert.alert("Permission required", "You need to allow access to your photos to upload an image.");
+      showModal('info', 'Permission required', 'You need to allow access to your photos to upload an image.');
       return;
     }
 
@@ -49,11 +83,28 @@ const ProfileSettingsScreen = () => {
     }
   };
 
+  const handleBackPress = () => {
+    if (loading) {
+      setShowBackConfirmation(true);
+    } else {
+      router.back();
+    }
+  };
+
+  const handleConfirmBack = () => {
+    setShowBackConfirmation(false);
+    router.back();
+  };
+
+  const handleCancelBack = () => {
+    setShowBackConfirmation(false);
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={handleBackPress}>
           <Icon name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile settings</Text>
@@ -64,7 +115,7 @@ const ProfileSettingsScreen = () => {
             style={styles.profileImage}
             source={{ uri: profileImage || 'https://www.shutterstock.com/image-vector/default-avatar-photo-placeholder-grey-600nw-2007531536.jpg' }} // Placeholder image
           />
-          <TouchableOpacity style={styles.addImageButton} onPress={handleImageUpload}>
+          <TouchableOpacity style={styles.addImageButton} onPress={handleImageUpload} disabled={loading}>
             <Icon name="add" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
@@ -76,9 +127,10 @@ const ProfileSettingsScreen = () => {
           placeholderTextColor={'#ccc'}
           value={name}
           onChangeText={setName}
-          style={styles.input}
+          style={[styles.input, loading && styles.inputDisabled]}
           underlineColor="transparent"
           activeUnderlineColor="transparent"
+          editable={!loading}
         />
         <TextInput
           mode="flat"
@@ -86,9 +138,10 @@ const ProfileSettingsScreen = () => {
           placeholderTextColor={'#ccc'}
           value={lastName}
           onChangeText={setLastName}
-          style={styles.input}
+          style={[styles.input, loading && styles.inputDisabled]}
           underlineColor="transparent"
           activeUnderlineColor="transparent"
+          editable={!loading}
         />
         <TextInput
           mode="flat"
@@ -98,24 +151,44 @@ const ProfileSettingsScreen = () => {
           placeholderTextColor={'#ccc'}      
           keyboardType="email-address"
           autoCapitalize="none"
-          style={styles.input}
+          style={[styles.input, loading && styles.inputDisabled]}
           underlineColor="transparent"
           activeUnderlineColor="transparent"
+          editable={!loading}
         />
         <TextInput
             mode="flat"
             value={city}
             onChangeText={setCity}
-            style={styles.input}
+            style={[styles.input, loading && styles.inputDisabled]}
             underlineColor="transparent"
             placeholder='Enter your city'
             placeholderTextColor={'#ccc'}
             activeUnderlineColor="transparent"
+            editable={!loading}
         />
       </View>
-      <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-        <Text style={styles.saveButtonText}>Save</Text>
+      <TouchableOpacity style={[styles.saveButton, loading && styles.saveButtonDisabled]} onPress={handleSave} disabled={loading}>
+        <Text style={styles.saveButtonText}>{loading ? 'Saving...' : 'Save'}</Text>
       </TouchableOpacity>
+
+      <ConfirmationModal
+        visible={showBackConfirmation}
+        title="Cancel Profile Setup?"
+        message="You are currently setting up your profile. Are you sure you want to cancel this process?"
+        confirmText="Cancel"
+        cancelText="Continue"
+        onConfirm={handleConfirmBack}
+        onCancel={handleCancelBack}
+        type="warning"
+      />
+      <AppModal
+        visible={modal.visible}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        onClose={hideModal}
+      />
     </View>
   );
 };
@@ -124,76 +197,65 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    paddingTop: 40,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
+    paddingTop: 50,
     paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    marginLeft: 20,
     color: '#333',
-    marginLeft: 16,
   },
   profileContainer: {
     alignItems: 'center',
-    marginVertical: 20,
+    marginBottom: 30,
   },
   profileImageContainer: {
     position: 'relative',
   },
   profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#f0f0f0',
-    marginBottom: 20,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
   },
   addImageButton: {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    backgroundColor: '#4CAF50',
-    borderRadius: 12,
-    width: 30,
-    height: 30,
+    backgroundColor: '#075B5E',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
   },
   inputContainer: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
+    marginBottom: 30,
   },
   input: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f8f9fa',
+    marginBottom: 15,
     borderRadius: 8,
-    marginBottom: 16,
-    paddingHorizontal: 12,
-    height: 50,
   },
-  cityInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  inputDisabled: {
     backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    marginBottom: 16,
-    paddingHorizontal: 12,
-    height: 50,
+    color: '#999',
   },
   saveButton: {
-    backgroundColor: '#00809D',
-    borderRadius: 12,
-    paddingVertical: 16,
-    marginHorizontal: 16,
+    backgroundColor: '#075B5E',
+    marginHorizontal: 20,
+    paddingVertical: 15,
+    borderRadius: 8,
     alignItems: 'center',
-    position: 'absolute',
-    bottom: 20,
-    width: width - 32,
+  },
+  saveButtonDisabled: {
+    backgroundColor: '#ccc',
   },
   saveButtonText: {
     color: '#fff',

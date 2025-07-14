@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, StatusBar, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, StatusBar, Alert, ActivityIndicator } from 'react-native';
 import { TextInput, Button } from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import apiClient from '../utils/apiClient';
+import * as ImagePicker from 'expo-image-picker';
+import AppModal from '../../components/ui/AppModal';
 
 const { width } = Dimensions.get('window');
 
@@ -15,21 +17,49 @@ const ProfileSettingsScreen = () => {
   const [mobile, setMobile] = useState('');
   const [loading, setLoading] = useState(true);
   const [imageUri, setImageUri] = useState('https://www.shutterstock.com/image-vector/default-avatar-photo-placeholder-grey-600nw-2007531536.jpg'); // Default image
+  const [uploading, setUploading] = useState(false);
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'info';
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
+
+  const showModal = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    setModal({ visible: true, type, title, message });
+  };
+  const hideModal = () => setModal((prev) => ({ ...prev, visible: false }));
+
+  // Helper function to get full image URL
+  const getFullImageUrl = (imageUrl: string | null | undefined) => {
+    if (!imageUrl) return 'https://www.shutterstock.com/image-vector/default-avatar-photo-placeholder-grey-600nw-2007531536.jpg';
+    if (imageUrl.startsWith('http')) return imageUrl;
+    return `http://192.168.1.72:9000${imageUrl}`;
+  };
 
   useEffect(() => {
     const fetchUserData = async () => {
       try {
         const response = await apiClient.get('me');
         const userData = response.data.data;
+        console.log('Fetched user data:', userData);
+        
         setName(userData.firstName || '');
         setLastName(userData.lastName || '');
         setEmail(userData.email || '');
         setMobile(userData.mobile || '');
-        // If the backend supports a profile picture URL, set it here
-        // setImageUri(userData.profilePicture || imageUri);
+        
+        const photoUrl = getFullImageUrl(userData.photo);
+        console.log('Setting profile image URL:', photoUrl);
+        setImageUri(photoUrl);
       } catch (err) {
         console.error('Failed to fetch user data:', err);
-        Alert.alert('Error', 'Failed to load profile data. Please try again.');
+        showModal('error', 'Error', 'Failed to load profile data. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -43,25 +73,119 @@ const ProfileSettingsScreen = () => {
       const updateUserDto = { firstName: name, lastName, email };
       const response = await apiClient.patch('me', updateUserDto);
       if (response.data.statusCode === 200) {
-        Alert.alert('Success', 'Profile updated successfully');
-        router.back();
+        showModal('success', 'Success', 'Profile updated successfully');
+        setTimeout(() => {
+          hideModal();
+          router.back();
+        }, 1200);
       }
     } catch (err) {
       console.error('Failed to update profile:', err);
-      Alert.alert('Error', 'Failed to update profile. Please try again.');
+      showModal('error', 'Error', 'Failed to update profile. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleImageUpload = () => {
-    // Placeholder for image upload logic
-    Alert.alert('Info', 'Image upload functionality is not implemented yet.');
-    console.log('Image upload triggered');
+  const handleImageUpload = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permissionResult.granted === false) {
+      showModal('info', 'Permission required', 'You need to allow access to your photos to upload an image.');
+      return;
+    }
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5, // 50% quality is usually good
+      base64: false, // Don't get base64, use the file directly
+    });
+    if (!pickerResult.canceled) {
+      setUploading(true);
+      try {
+        const uri = pickerResult.assets[0].uri;
+        console.log('Selected image URI:', uri);
+        
+        // Create form data for file upload
+        const formData = new FormData();
+        formData.append('file', {
+          uri: uri,
+          type: 'image/jpeg',
+          name: 'profile.jpg',
+        } as any);
+
+        console.log('Uploading image to uploads endpoint...');
+        
+        // First, upload the file to uploads endpoint
+        const uploadResponse = await apiClient.post('uploads/public', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+
+        console.log('Upload response:', uploadResponse.data);
+
+        if (uploadResponse.data.statusCode === 201) {
+          const imageUrl = uploadResponse.data.data.url;
+          console.log('Image uploaded successfully, URL:', imageUrl);
+          
+          // Fix localhost URL to use correct server IP
+          let fixedImageUrl = imageUrl;
+          if (imageUrl.includes('localhost:3000')) {
+            fixedImageUrl = imageUrl.replace('http://localhost:3000', 'http://192.168.1.72:9000');
+            console.log('Fixed localhost URL to:', fixedImageUrl);
+          }
+          
+          // Then update the profile with the image URL
+          const profileUpdateData = { photo: fixedImageUrl };
+          console.log('Updating profile with image URL:', fixedImageUrl);
+          
+          const profileResponse = await apiClient.patch('me', profileUpdateData);
+          console.log('Profile update response:', profileResponse.data);
+          
+          if (profileResponse.data.statusCode === 200) {
+            const newUrl = getFullImageUrl(profileResponse.data.data.photo);
+            console.log('Setting new image URL:', newUrl);
+            setImageUri(newUrl);
+            showModal('success', 'Success', 'Profile image updated successfully');
+          } else {
+            console.error('Profile update failed:', profileResponse.data);
+            showModal('error', 'Error', 'Failed to update profile with new image.');
+          }
+        } else {
+          console.error('Image upload failed:', uploadResponse.data);
+          showModal('error', 'Error', 'Failed to upload image.');
+        }
+      } catch (err: any) {
+        console.error('Failed to upload image:', err);
+        console.error('Error details:', {
+          message: err.message,
+          response: err.response?.data,
+          status: err.response?.status,
+          config: err.config
+        });
+        
+        if (err.code === 'NETWORK_ERROR') {
+          showModal('error', 'Network Error', 'Please check your internet connection and try again.');
+        } else if (err.response?.status === 413) {
+          showModal('error', 'Error', 'Image file is too large. Please select a smaller image.');
+        } else if (err.response?.status === 400) {
+          showModal('error', 'Error', 'Invalid image format. Please select a valid image file.');
+        } else {
+          showModal('error', 'Error', `Failed to upload image: ${err.message || 'Unknown error'}`);
+        }
+      } finally {
+        setUploading(false);
+      }
+    }
   };
 
   if (loading) {
-    return <Text>Loading...</Text>;
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#00809D" />
+      </View>
+    );
   }
 
   return (
@@ -79,8 +203,12 @@ const ProfileSettingsScreen = () => {
             style={styles.profileImage}
             source={{ uri: imageUri }}
           />
-          <TouchableOpacity style={styles.addImageButton} onPress={handleImageUpload}>
-            <Icon name="add" size={24} color="#fff" />
+          <TouchableOpacity style={styles.addImageButton} onPress={handleImageUpload} disabled={uploading}>
+            {uploading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Icon name="add" size={24} color="#fff" />
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -131,6 +259,13 @@ const ProfileSettingsScreen = () => {
       <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={loading}>
         <Text style={styles.saveButtonText}>{loading ? 'Saving...' : 'Save'}</Text>
       </TouchableOpacity>
+      <AppModal
+        visible={modal.visible}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        onClose={hideModal}
+      />
     </View>
   );
 };

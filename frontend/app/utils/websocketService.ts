@@ -29,7 +29,7 @@ class WebSocketService {
   private sockets: { [key: string]: Socket | null } = {};
   private isConnected: { [key: string]: boolean } = {};
   private connectionPromises: { [key: string]: Promise<void> | null } = {};
-  private baseUrl: string = 'http://192.168.0.2:9000';
+  private baseUrl: string = 'http://192.168.0.4:9000';
 
   async connect(rideId?: string, namespace: 'driver' | 'passenger' | 'ride' = 'driver'): Promise<void> {
     try {
@@ -96,6 +96,16 @@ class WebSocketService {
       socket.on('connect_error', (error) => {
         console.error(`WebSocket: Connection error to ${namespace} namespace:`, error);
         this.isConnected[namespace] = false;
+        
+        // Handle specific errors for ride namespace
+        if (namespace === 'ride') {
+          const errorMessage = error.message || '';
+          if (errorMessage.includes('Ride is no longer active') || errorMessage.includes('Ride is not in cancelable status')) {
+            console.log(`WebSocket: Ride is cancelled, suppressing connection error`);
+            // Don't throw this error, just log it
+            return;
+          }
+        }
       });
 
       socket.on('error', (error) => {
@@ -118,6 +128,17 @@ class WebSocketService {
 
         socket.once('connect_error', (error) => {
           clearTimeout(timeout);
+          
+          // Handle specific errors for ride namespace
+          if (namespace === 'ride') {
+            const errorMessage = error.message || '';
+            if (errorMessage.includes('Ride is no longer active') || errorMessage.includes('Ride is not in cancelable status')) {
+              console.log(`WebSocket: Ride is cancelled, rejecting with specific error`);
+              reject(new Error('Ride is no longer active'));
+              return;
+            }
+          }
+          
           reject(error);
         });
       });
@@ -142,18 +163,43 @@ class WebSocketService {
     });
 
     socket.on('error', (error: any) => {
-      // Suppress expected 400 errors for location updates
-      if (error && error.code === 400 && error.message === 'Failed to update location') {
-        // This is an expected error when passengers try to send location updates
-        // or when the ride status doesn't allow location updates
-        console.log(`WebSocket: Suppressed expected 400 error for location update in ${namespace} namespace`);
-        return;
-      }
-      
-      // Suppress other common expected errors
+      // Suppress expected 400 errors for location updates and ride ID validation
       if (error && error.code === 400) {
-        console.log(`WebSocket: Suppressed expected 400 error in ${namespace} namespace:`, error.message);
-        return;
+        const errorMessage = error.message || '';
+        
+        // List of expected error messages that should be suppressed
+        const expectedErrors = [
+          'Failed to update location',
+          'Ride ID is required',
+          'Ride is not in accepted/ongoing status',
+          'Only driver can update ride location',
+          'Ride not found',
+          'Invalid ride ID format',
+          'Invalid coordinates provided',
+          'Progress must be a number between 0 and 100',
+          'User authentication required',
+          'Message content is required',
+          'Message ID is required',
+          'Ride offer ID is required',
+          'Can only reject submitted offers',
+          'Ride is not in searching status',
+          'Ride offer is not in submitted status',
+          'Ride is not in cancelable status',
+          'Ride is not in accepted status',
+          'Only driver can start ride',
+          'Ride is not in ongoing status',
+          'Only driver can end ride',
+          'Ride is no longer active'
+        ];
+        
+        const isExpectedError = expectedErrors.some(expectedError => 
+          errorMessage.includes(expectedError)
+        );
+        
+        if (isExpectedError) {
+          console.log(`WebSocket: Suppressed expected 400 error in ${namespace} namespace:`, errorMessage);
+          return;
+        }
       }
       
       // Log other errors normally
@@ -163,6 +209,15 @@ class WebSocketService {
     // Also handle connection errors
     socket.on('connect_error', (error) => {
       console.error(`WebSocket: Connection error in ${namespace} namespace:`, error);
+      
+      // Handle specific errors for ride namespace
+      if (namespace === 'ride') {
+        const errorMessage = error.message || '';
+        if (errorMessage.includes('Ride is no longer active') || errorMessage.includes('Ride is not in cancelable status')) {
+          console.log(`WebSocket: Ride is cancelled, suppressing connection error in ${namespace} namespace`);
+          return;
+        }
+      }
     });
 
     // Namespace-specific events
@@ -235,17 +290,52 @@ class WebSocketService {
 
     socket.on('rideLocationUpdated', (data) => {
       console.log('WebSocket: Ride location update received:', data);
-      this.emit('rideLocationUpdated', data, 'ride');
+      // Only emit if data is valid
+      if (data && typeof data === 'object') {
+        this.emit('rideLocationUpdated', data, 'ride');
+      } else {
+        console.warn('WebSocket: Received invalid rideLocationUpdated data:', data);
+      }
     });
 
     // Handle errors with suppression for expected cases
     socket.on('error', (error: any) => {
-      // Suppress expected 400 errors for location updates
-      if (error && error.code === 400 && error.message === 'Failed to update location') {
-        // This is an expected error when passengers try to send location updates
-        // or when the ride status doesn't allow location updates
-        console.log('WebSocket: Suppressed expected 400 error for location update');
-        return;
+      // Suppress expected 400 errors for location updates and ride ID validation
+      if (error && error.code === 400) {
+        const errorMessage = error.message || '';
+        
+        // List of expected error messages that should be suppressed
+        const expectedErrors = [
+          'Failed to update location',
+          'Ride ID is required',
+          'Ride is not in accepted/ongoing status',
+          'Only driver can update ride location',
+          'Ride not found',
+          'Invalid ride ID format',
+          'Invalid coordinates provided',
+          'Progress must be a number between 0 and 100',
+          'User authentication required',
+          'Message content is required',
+          'Message ID is required',
+          'Ride offer ID is required',
+          'Can only reject submitted offers',
+          'Ride is not in searching status',
+          'Ride offer is not in submitted status',
+          'Ride is not in cancelable status',
+          'Ride is not in accepted status',
+          'Only driver can start ride',
+          'Ride is not in ongoing status',
+          'Only driver can end ride'
+        ];
+        
+        const isExpectedError = expectedErrors.some(expectedError => 
+          errorMessage.includes(expectedError)
+        );
+        
+        if (isExpectedError) {
+          console.log('WebSocket: Suppressed expected 400 error in ride namespace:', errorMessage);
+          return;
+        }
       }
       
       // Log other errors normally
@@ -297,13 +387,20 @@ class WebSocketService {
   emitEvent(event: string, data?: any, callback?: (response: any) => void, namespace: 'driver' | 'passenger' | 'ride' = 'driver'): void {
     const socket = this.sockets[namespace];
     if (socket && socket.connected) {
+      // Validate data for critical events
       if (event === 'updateRideLocation') {
         console.log(`[websocketService] Emitting updateRideLocation to ${namespace} namespace:`, data);
+        // Ensure data has required fields
+        if (!data || typeof data.latitude !== 'number' || typeof data.longitude !== 'number') {
+          console.error(`[websocketService] Invalid updateRideLocation data:`, data);
+          return;
+        }
       } else if (event === 'pingStatus') {
         console.log(`[websocketService] Emitting pingStatus to ${namespace} namespace:`, data);
       } else if (event === 'rideProgressUpdate') {
         console.log(`[websocketService] Emitting rideProgressUpdate:`, data);
       }
+      
       if (callback) {
         socket.emit(event, data, callback);
       } else {

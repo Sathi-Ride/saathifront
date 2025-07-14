@@ -8,6 +8,7 @@ import { StatusBar } from "expo-status-bar"
 import SidePanel from "./sidepanel"
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps'
 import { MaterialIcons } from '@expo/vector-icons'
+import Toast from '../../components/ui/Toast';
 
 export default function HomeScreen() {
   const router = useRouter()
@@ -16,6 +17,13 @@ export default function HomeScreen() {
   const [errorMsg, setErrorMsg] = useState(null)
   const [sidePanelVisible, setSidePanelVisible] = useState(false)
   const [localRideInProgress, setLocalRideInProgress] = useState(false)
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => setToast({ visible: true, message, type });
+  const hideToast = () => setToast(prev => ({ ...prev, visible: false }));
 
   // Mock location data - replace with real GPS when ready
   useEffect(() => {
@@ -23,7 +31,7 @@ export default function HomeScreen() {
     // const getLocation = async () => {
     //   let { status } = await Location.requestForegroundPermissionsAsync();
     //   if (status !== 'granted') {
-    //     setErrorMsg('Permission to access location was denied');
+    //     showToast('Permission to access location was denied', 'error');
     //     return;
     //   }
     //   let location = await Location.getCurrentPositionAsync({});
@@ -77,6 +85,10 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
+
+      {toast.visible && (
+        <Toast visible={toast.visible} message={toast.message} type={toast.type} onHide={hideToast} />
+      )}
 
       <View style={styles.mapContainer}>
         <TouchableOpacity style={styles.hamburgerButton} onPress={openSidePanel}>
