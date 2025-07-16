@@ -5,7 +5,7 @@ import MapView, { Marker, Polyline } from 'react-native-maps'
 import Icon from "react-native-vector-icons/MaterialIcons"
 import ProfileImage from '../../components/ProfileImage';
 import { useRouter, useLocalSearchParams } from "expo-router"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { rideService } from '../utils/rideService'
 import { useUserRole } from '../utils/userRoleManager'
 import AppModal from '../../components/ui/AppModal';
@@ -14,6 +14,7 @@ import * as Sharing from 'expo-sharing';
 import Toast from '../../components/ui/Toast';
 import { emitRideRemoved } from './rideHistory';
 import { userRoleManager } from '../utils/userRoleManager';
+import { locationService } from '../utils/locationService';
 
 const { width, height } = Dimensions.get("window")
 
@@ -115,6 +116,9 @@ const RideDetailsScreen = () => {
     onAction: undefined,
   });
   const [receiptModal, setReceiptModal] = useState<{ visible: boolean; type: 'success' | 'error' | 'info'; title: string; message: string; loading?: boolean }>({ visible: false, type: 'info', title: '', message: '', loading: false });
+  const [routePolyline, setRoutePolyline] = useState<{ latitude: number; longitude: number }[]>([]);
+  const [loadingRoute, setLoadingRoute] = useState(false);
+  const mapRef = useRef<MapView>(null);
 
 
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({ visible: false, message: '', type: 'info' });
@@ -128,39 +132,6 @@ const RideDetailsScreen = () => {
 
   const showReceiptModal = (type: 'success' | 'error' | 'info', title: string, message: string, loading = false) => setReceiptModal({ visible: true, type, title, message, loading });
   const hideReceiptModal = () => setReceiptModal(prev => ({ ...prev, visible: false, loading: false }));
-
-  useEffect(() => {
-    const fetchRideDetails = async () => {
-      if (!rideId) {
-        setError('Ride ID is required')
-        setLoading(false)
-        return
-      }
-
-      setLoading(true)
-      setError(null)
-      try {
-        console.log('[RideDetails] Fetching ride details for:', rideId)
-        const rideData = await rideService.getRideDetails(rideId)
-        console.log('[RideDetails] Received ride details:', rideData)
-        
-        if (rideData) {
-          setRideDetails(rideData)
-        } else {
-          console.log('[RideDetails] No ride details found, using fallback data')
-          setRideDetails(null) // Use fallback data
-        }
-      } catch (err) {
-        console.error('[RideDetails] Error fetching ride details:', err)
-        console.log('[RideDetails] Using fallback data due to error')
-        setRideDetails(null) // Use fallback data on error
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchRideDetails()
-  }, [rideId])
 
   // Extract string values from params (handle arrays) for fallback
   const getString = (val: string | string[] | undefined, defaultVal = "") =>
@@ -329,12 +300,111 @@ const RideDetailsScreen = () => {
     }
   }
 
-  const locations = getLocations()
-  const vehicleInfo = getVehicleInfo()
-  const fare = getFare()
-  const distanceDuration = getDistanceDuration()
-  const rideDate = getRideDate()
-  const times = getTimes()
+  const locations = getLocations();
+  const vehicleInfo = getVehicleInfo();
+  const fare = getFare();
+  const distanceDuration = getDistanceDuration();
+  const rideDate = getRideDate();
+  const times = getTimes();
+
+  useEffect(() => {
+    const fetchRideDetails = async () => {
+      if (!rideId) {
+        setError('Ride ID is required')
+        setLoading(false)
+        return
+      }
+
+      setLoading(true)
+      setError(null)
+      try {
+        console.log('[RideDetails] Fetching ride details for:', rideId)
+        const rideData = await rideService.getRideDetails(rideId)
+        console.log('[RideDetails] Received ride details:', rideData)
+        
+        if (rideData) {
+          setRideDetails(rideData)
+        } else {
+          console.log('[RideDetails] No ride details found, using fallback data')
+          setRideDetails(null) // Use fallback data
+        }
+      } catch (err) {
+        console.error('[RideDetails] Error fetching ride details:', err)
+        console.log('[RideDetails] Using fallback data due to error')
+        setRideDetails(null) // Use fallback data on error
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchRideDetails()
+  }, [rideId])
+
+  useEffect(() => {
+    const fetchRoute = async () => {
+      setLoadingRoute(true);
+      try {
+        const origin = { lat: locations.pickupLat, lng: locations.pickupLng };
+        const destination = { lat: locations.dropoffLat, lng: locations.dropoffLng };
+        // Kathmandu Valley bounding box (approx):
+        // North: 27.85, South: 27.60, West: 85.20, East: 85.55
+        // Directions API does not support bounding box directly, but we can check if both points are inside
+        const KATHMANDU_BOUNDING_BOX = {
+          north: 27.85,
+          south: 27.60,
+          east: 85.55,
+          west: 85.20,
+        };
+        function isInKathmandu(lat: number, lng: number) {
+          return lat >= KATHMANDU_BOUNDING_BOX.south && lat <= KATHMANDU_BOUNDING_BOX.north &&
+            lng >= KATHMANDU_BOUNDING_BOX.west && lng <= KATHMANDU_BOUNDING_BOX.east;
+        }
+        const inAllowedArea = isInKathmandu(origin.lat, origin.lng) && isInKathmandu(destination.lat, destination.lng);
+        if (!inAllowedArea) {
+          setRoutePolyline([]);
+          setLoadingRoute(false);
+          return;
+        }
+        const route = await locationService.getRouteBetweenPoints(origin, destination);
+        // Decode polyline
+        const decodePolyline = (encoded: string): { latitude: number; longitude: number }[] => {
+          let points = [];
+          let index = 0, len = encoded.length;
+          let lat = 0, lng = 0;
+          while (index < len) {
+            let b, shift = 0, result = 0;
+            do {
+              b = encoded.charCodeAt(index++) - 63;
+              result |= (b & 0x1f) << shift;
+              shift += 5;
+            } while (b >= 0x20);
+            let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+            lat += dlat;
+            shift = 0;
+            result = 0;
+            do {
+              b = encoded.charCodeAt(index++) - 63;
+              result |= (b & 0x1f) << shift;
+              shift += 5;
+            } while (b >= 0x20);
+            let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+            lng += dlng;
+            points.push({
+              latitude: lat / 1e5,
+              longitude: lng / 1e5
+            });
+          }
+          return points;
+        };
+        setRoutePolyline(decodePolyline(route.polyline));
+      } catch (e) {
+        setRoutePolyline([]);
+      }
+      setLoadingRoute(false);
+    };
+    fetchRoute();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locations.pickupLat, locations.pickupLng, locations.dropoffLat, locations.dropoffLng]);
 
   const handleReceipt = async () => {
     showReceiptModal('info', 'Generating Receipt', 'Please wait while we generate your PDF receipt...', true);
@@ -501,6 +571,7 @@ const RideDetailsScreen = () => {
         {/* Map */}
         <View style={styles.mapContainer}>
           <MapView
+            ref={mapRef}
             style={styles.map}
             initialRegion={{
               latitude: locations.pickupLat,
@@ -515,6 +586,22 @@ const RideDetailsScreen = () => {
             pitchEnabled={true}
             rotateEnabled={true}
             pointerEvents="auto"
+            minZoomLevel={12}
+            maxZoomLevel={17}
+            onRegionChangeComplete={(region) => {
+              // Prevent panning outside Kathmandu Valley
+              const lat = region.latitude;
+              const lng = region.longitude;
+              if (lat < 27.60 || lat > 27.85 || lng < 85.20 || lng > 85.55) {
+                // Snap back to valley center
+                mapRef.current?.animateToRegion({
+                  latitude: 27.7172,
+                  longitude: 85.324,
+                  latitudeDelta: 0.1,
+                  longitudeDelta: 0.1,
+                }, 500);
+              }
+            }}
           >
             {/* Pickup Marker */}
             <Marker
@@ -523,7 +610,7 @@ const RideDetailsScreen = () => {
                 longitude: locations.pickupLng,
               }}
               title="Pickup"
-              pinColor="#2196F3"
+              pinColor="#075B5E"
             />
             {/* Dropoff Marker */}
             <Marker
@@ -532,18 +619,16 @@ const RideDetailsScreen = () => {
                 longitude: locations.dropoffLng,
               }}
               title="Dropoff"
-              pinColor="#4CAF50"
+              pinColor="#EA2F14"
             />
             {/* Route Polyline */}
-            <Polyline
-              coordinates={[
-                { latitude: locations.pickupLat, longitude: locations.pickupLng },
-                { latitude: (locations.pickupLat + locations.dropoffLat) / 2, longitude: (locations.pickupLng + locations.dropoffLng) / 2 },
-                { latitude: locations.dropoffLat, longitude: locations.dropoffLng }
-              ]}
-              strokeColor="#2196F3"
-              strokeWidth={4}
-            />
+            {routePolyline.length > 0 && (
+              <Polyline
+                coordinates={routePolyline}
+                strokeColor="#2196F3"
+                strokeWidth={4}
+              />
+            )}
           </MapView>
         </View>
 
@@ -755,14 +840,14 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: "#2196F3",
+    backgroundColor: "#075B5E",
     marginRight: 12,
   },
   greenDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: "#4CAF50",
+    backgroundColor: "#EA2F14",
     marginRight: 12,
   },
   locationInfo: {

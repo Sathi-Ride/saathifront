@@ -21,6 +21,12 @@ interface LocationSearchProps {
   iconColor?: string;
   showSavedAddresses?: boolean;
   disabled?: boolean;
+  boundingBox?: {
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+  };
 }
 
 const LocationSearch: React.FC<LocationSearchProps> = ({
@@ -31,6 +37,7 @@ const LocationSearch: React.FC<LocationSearchProps> = ({
   iconColor = '#075B5E',
   showSavedAddresses = true,
   disabled = false,
+  boundingBox,
 }) => {
   const [searchResults, setSearchResults] = useState<GoogleMapsPlace[]>([]);
   const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
@@ -95,7 +102,7 @@ const LocationSearch: React.FC<LocationSearchProps> = ({
       setLoading(true);
       try {
         console.log('LocationSearch: Searching for:', query);
-        const results = await locationService.searchPlaces(query);
+        const results = await locationService.searchPlaces(query, boundingBox);
         console.log('LocationSearch: Received results:', results);
         setSearchResults(results);
         
@@ -130,10 +137,13 @@ const LocationSearch: React.FC<LocationSearchProps> = ({
     if (!place.location || (place.location.lat === 0 && place.location.lng === 0)) {
       if (place.place_id) {
         console.log('Getting place details for coordinates...');
-        const placeDetails = await locationService.getPlaceDetails(place.place_id);
+        const placeDetails = await locationService.getPlaceDetails(place.place_id, boundingBox);
         if (placeDetails) {
           place = placeDetails;
           console.log('Updated place with coordinates:', place);
+        } else {
+          showToast('Selected place is outside the allowed area.', 'error');
+          return;
         }
       }
     }

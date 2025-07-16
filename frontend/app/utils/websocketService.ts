@@ -29,7 +29,7 @@ class WebSocketService {
   private sockets: { [key: string]: Socket | null } = {};
   private isConnected: { [key: string]: boolean } = {};
   private connectionPromises: { [key: string]: Promise<void> | null } = {};
-  private baseUrl: string = 'http://192.168.0.4:9000';
+  private baseUrl: string = 'http://192.168.0.66:9000';
 
   async connect(rideId?: string, namespace: 'driver' | 'passenger' | 'ride' = 'driver'): Promise<void> {
     try {
@@ -74,6 +74,13 @@ class WebSocketService {
       });
 
       const socket = this.sockets[namespace];
+
+      // Add global event logger for debugging (development only)
+      if (process.env.NODE_ENV === 'development' && socket && typeof socket.onAny === 'function') {
+        socket.onAny((event: string, ...args: any[]) => {
+          console.log(`[WebSocket][onAny][${namespace}] Event:`, event, 'Args:', args);
+        });
+      }
 
       // Setup connection handlers
       socket.on('connect', () => {

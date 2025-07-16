@@ -45,6 +45,13 @@ export interface GoogleMapsDistance {
   };
 }
 
+export interface BoundingBox {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
+}
+
 class LocationService {
   private currentLocation: LocationData | null = null;
   private locationSubscription: Location.LocationSubscription | null = null;
@@ -109,7 +116,7 @@ class LocationService {
   }
 
   // Search places using Google Maps API
-  async searchPlaces(query: string): Promise<GoogleMapsPlace[]> {
+  async searchPlaces(query: string, boundingBox?: BoundingBox): Promise<GoogleMapsPlace[]> {
     try {
       console.log('Searching places for query:', query);
       
@@ -120,7 +127,15 @@ class LocationService {
       console.log('Search response:', response.data);
 
       if (response.data.statusCode === 200) {
-        const results = response.data.data;
+        let results = response.data.data;
+        // Filter by bounding box if provided
+        if (boundingBox) {
+          results = results.filter((place: any) =>
+            place.location &&
+            place.location.lat >= boundingBox.south && place.location.lat <= boundingBox.north &&
+            place.location.lng >= boundingBox.west && place.location.lng <= boundingBox.east
+          );
+        }
         console.log('Found places:', results);
         
         // Backend already returns the correct format, just add place_id for frontend compatibility
@@ -140,7 +155,7 @@ class LocationService {
         
         // If backend returns empty results, try Autocomplete API as fallback
         console.log('Backend returned empty results, trying Autocomplete API...');
-        const autocompleteResults = await this.searchPlacesWithAutocomplete(query);
+        const autocompleteResults = await this.searchPlacesWithAutocomplete(query, boundingBox);
         if (autocompleteResults.length > 0) {
           console.log('Autocomplete API returned results:', autocompleteResults);
           return autocompleteResults;
@@ -153,7 +168,7 @@ class LocationService {
       
       // Try Autocomplete API as fallback
       console.log('Trying Autocomplete API as fallback...');
-      const autocompleteResults = await this.searchPlacesWithAutocomplete(query);
+      const autocompleteResults = await this.searchPlacesWithAutocomplete(query, boundingBox);
       if (autocompleteResults.length > 0) {
         console.log('Autocomplete API returned results:', autocompleteResults);
         return autocompleteResults;
@@ -170,7 +185,7 @@ class LocationService {
       // Try Autocomplete API as fallback
       console.log('Trying Autocomplete API as fallback due to error...');
       try {
-        const autocompleteResults = await this.searchPlacesWithAutocomplete(query);
+        const autocompleteResults = await this.searchPlacesWithAutocomplete(query, boundingBox);
         if (autocompleteResults.length > 0) {
           console.log('Autocomplete API returned results:', autocompleteResults);
           return autocompleteResults;
@@ -694,7 +709,7 @@ class LocationService {
   }
 
   // Search places using Google Places Autocomplete API (fallback)
-  async searchPlacesWithAutocomplete(query: string): Promise<GoogleMapsPlace[]> {
+  async searchPlacesWithAutocomplete(query: string, boundingBox?: BoundingBox): Promise<GoogleMapsPlace[]> {
     try {
       console.log('Searching places with Autocomplete API for query:', query);
       
@@ -723,9 +738,20 @@ class LocationService {
       const data = await response.json();
       console.log('New Places API response:', data);
       
-      if (data.places && data.places.length > 0) {
+      let places = data.places || [];
+      // After getting places, filter by boundingBox if provided
+      if (boundingBox && places.length > 0) {
+        // Only keep places with coordinates in box (if available)
+        places = places.filter((place: any) =>
+          place.location &&
+          place.location.lat >= boundingBox.south && place.location.lat <= boundingBox.north &&
+          place.location.lng >= boundingBox.west && place.location.lng <= boundingBox.east
+        );
+      }
+      
+      if (places && places.length > 0) {
         // Convert places to our format
-        const places = data.places.map((place: any, index: number) => ({
+        const placesWithIds = places.map((place: any, index: number) => ({
           place_id: place.id,
           name: place.displayName?.text || place.formattedAddress,
           address: place.formattedAddress,
@@ -740,25 +766,25 @@ class LocationService {
           }
         }));
         
-        console.log('Converted places from new API:', places);
-        return places;
+        console.log('Converted places from new API:', placesWithIds);
+        return placesWithIds;
       }
       
       // If new API fails, try legacy API as fallback
       console.log('New Places API failed, trying legacy API...');
-      return await this.searchPlacesWithLegacyAPI(query);
+      return await this.searchPlacesWithLegacyAPI(query, boundingBox);
       
     } catch (error: any) {
       console.error('Error with new Places API:', error);
       
       // Try legacy API as fallback
       console.log('Trying legacy API as fallback...');
-      return await this.searchPlacesWithLegacyAPI(query);
+      return await this.searchPlacesWithLegacyAPI(query, boundingBox);
     }
   }
 
   // Fallback to legacy Places API
-  private async searchPlacesWithLegacyAPI(query: string): Promise<GoogleMapsPlace[]> {
+  private async searchPlacesWithLegacyAPI(query: string, boundingBox?: BoundingBox): Promise<GoogleMapsPlace[]> {
     try {
       const apiKey = 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg';
       const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&key=${apiKey}&types=geocode&components=country:np`;
@@ -768,9 +794,22 @@ class LocationService {
       
       console.log('Legacy API response:', data);
       
-      if (data.status === 'OK' && data.predictions) {
+      let places = data.predictions || [];
+      // After getting places, filter by boundingBox if provided
+      if (boundingBox && places.length > 0) {
+        places = places.filter((prediction: any) => {
+          const inBox = !boundingBox || (
+            prediction.location &&
+            prediction.location.lat >= boundingBox.south && prediction.location.lat <= boundingBox.north &&
+            prediction.location.lng >= boundingBox.west && prediction.location.lng <= boundingBox.east
+          );
+          return inBox;
+        });
+      }
+      
+      if (places && places.length > 0) {
         // Convert predictions to our format
-        const places = data.predictions.map((prediction: any, index: number) => ({
+        const placesWithIds = places.map((prediction: any, index: number) => ({
           place_id: prediction.place_id,
           name: prediction.structured_formatting?.main_text || prediction.description,
           address: prediction.description,
@@ -782,8 +821,8 @@ class LocationService {
           structured_formatting: prediction.structured_formatting
         }));
         
-        console.log('Converted places from legacy API:', places);
-        return places;
+        console.log('Converted places from legacy API:', placesWithIds);
+        return placesWithIds;
       }
       
       console.log('Legacy API also returned no results, using mock data');
@@ -796,7 +835,7 @@ class LocationService {
   }
 
   // Get place details with coordinates
-  async getPlaceDetails(placeId: string): Promise<GoogleMapsPlace | null> {
+  async getPlaceDetails(placeId: string, boundingBox?: BoundingBox): Promise<GoogleMapsPlace | null> {
     try {
       const apiKey = 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg';
       
@@ -814,6 +853,11 @@ class LocationService {
       console.log('New Places API details response:', data);
       
       if (data.displayName && data.location) {
+        const inBox = !boundingBox || (
+          data.location.latitude >= boundingBox.south && data.location.latitude <= boundingBox.north &&
+          data.location.longitude >= boundingBox.west && data.location.longitude <= boundingBox.east
+        );
+        if (!inBox) return null;
         return {
           place_id: placeId,
           name: data.displayName.text,
@@ -832,19 +876,19 @@ class LocationService {
       
       // If new API fails, try legacy API
       console.log('New Places API details failed, trying legacy API...');
-      return await this.getPlaceDetailsLegacy(placeId);
+      return await this.getPlaceDetailsLegacy(placeId, boundingBox);
       
     } catch (error) {
       console.error('Error with new Places API details:', error);
       
       // Try legacy API as fallback
       console.log('Trying legacy API details as fallback...');
-      return await this.getPlaceDetailsLegacy(placeId);
+      return await this.getPlaceDetailsLegacy(placeId, boundingBox);
     }
   }
 
   // Fallback to legacy Places API for details
-  private async getPlaceDetailsLegacy(placeId: string): Promise<GoogleMapsPlace | null> {
+  private async getPlaceDetailsLegacy(placeId: string, boundingBox?: BoundingBox): Promise<GoogleMapsPlace | null> {
     try {
       const apiKey = 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg';
       const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry,name,formatted_address&key=${apiKey}`;
@@ -855,6 +899,11 @@ class LocationService {
       console.log('Legacy API details response:', data);
       
       if (data.status === 'OK' && data.result) {
+        const inBox = !boundingBox || (
+          data.result.geometry.location.lat >= boundingBox.south && data.result.geometry.location.lat <= boundingBox.north &&
+          data.result.geometry.location.lng >= boundingBox.west && data.result.geometry.location.lng <= boundingBox.east
+        );
+        if (!inBox) return null;
         return {
           place_id: placeId,
           name: data.result.name,

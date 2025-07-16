@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ActivityIndicator, StatusBar, Platform, ScrollView, KeyboardAvoidingView } from "react-native"
 import { TextInput } from "react-native-paper"
 import Icon from "react-native-vector-icons/MaterialIcons"
@@ -12,7 +12,7 @@ import LocationSearch from "../../components/LocationSearch"
 import { locationService, LocationData, GoogleMapsPlace } from "../utils/locationService"
 import { rideService, VehicleType, RideRequest } from "../utils/rideService"
 import { userRoleManager, useUserRole } from "../utils/userRoleManager"
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps'
+import MapView, { Marker, PROVIDER_GOOGLE, Polyline } from 'react-native-maps'
 import MaterialIcons from "react-native-vector-icons/MaterialIcons"
 
 const { width, height } = Dimensions.get("window")
@@ -57,6 +57,12 @@ const PassengerHomeScreen = () => {
   const hideToast = () => {
     setToast(prev => ({ ...prev, visible: false }));
   };
+
+  // --- STATE FOR PRICE ADJUSTMENT ---
+  const [canAdjustPrice, setCanAdjustPrice] = useState(false);
+  const [priceAdjustment, setPriceAdjustment] = useState(0); // -10, -5, 0, +5, +10
+  const [adjustUpCount, setAdjustUpCount] = useState(0); // max 2
+  const [adjustDownCount, setAdjustDownCount] = useState(0); // max 2
 
   // Initialize location and vehicle types
   useEffect(() => {
@@ -106,6 +112,7 @@ const PassengerHomeScreen = () => {
       // Fallback coordinates
       setPickupCoords({ lat: 27.7172, lng: 85.324 });
     }
+    setRoutePolyline([]);
   };
 
   // Handle destination location selection
@@ -118,9 +125,10 @@ const PassengerHomeScreen = () => {
       // Fallback coordinates
       setDestinationCoords({ lat: 27.7089, lng: 85.3206 });
     }
+    setRoutePolyline([]);
   };
 
-  // Calculate estimated fare
+  // --- MODIFIED CALCULATE FARE ---
   const calculateEstimatedFare = async () => {
     if (!pickupLocation || !destinationLocation || !selectedVehicleType) {
       console.log('Missing required data for fare calculation:', {
@@ -128,6 +136,7 @@ const PassengerHomeScreen = () => {
         destinationLocation,
         selectedVehicleType: selectedVehicleType?.name
       });
+      showToast('Select pickup and dropoff locations', 'info');
       return;
     }
 
@@ -159,11 +168,31 @@ const PassengerHomeScreen = () => {
         );
         console.log('Estimated fare calculated:', estimatedFare);
         setOfferPrice(estimatedFare.toString());
+        setCanAdjustPrice(true); // Enable price adjustment
+        setPriceAdjustment(0); // Reset adjustment
+        setAdjustUpCount(0);
+        setAdjustDownCount(0);
       } else {
         showToast('Could not calculate distance for fare', 'error');
       }
     } catch (error) {
       showToast('Error calculating fare: ' + ((error as any)?.message || 'Unknown error'), 'error');
+    }
+  };
+
+  // --- PRICE ADJUSTMENT HANDLERS ---
+  const handleAdjustUp = () => {
+    if (canAdjustPrice && adjustUpCount < 2) {
+      setPriceAdjustment(prev => prev + 5);
+      setAdjustUpCount(prev => prev + 1);
+      if (adjustDownCount > 0) setAdjustDownCount(0); // Reset down count if going up
+    }
+  };
+  const handleAdjustDown = () => {
+    if (canAdjustPrice && adjustDownCount < 2) {
+      setPriceAdjustment(prev => prev - 5);
+      setAdjustDownCount(prev => prev + 1);
+      if (adjustUpCount > 0) setAdjustUpCount(0); // Reset up count if going down
     }
   };
 
@@ -205,22 +234,16 @@ const PassengerHomeScreen = () => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c;
     
-    // If distance is very small (less than 0.1 km = 100 meters), consider them the same
     if (distance < 0.1) {
       showToast('You cannot have the same pickup and dropoff location', 'error');
       return;
     }
     
-    // Also check if the location names are the same (case-insensitive)
     if (pickupLocation.toLowerCase().trim() === destinationLocation.toLowerCase().trim()) {
       showToast('You cannot have the same pickup and dropoff location', 'error');
       return;
     }
 
-    if (!offerPrice || parseFloat(offerPrice) <= 0) {
-      showToast('Please enter a valid offer price', 'error');
-      return;
-    }
 
     setLoading(true);
     showToast('Creating ride request...', 'info');
@@ -302,7 +325,7 @@ const PassengerHomeScreen = () => {
     }
   };
 
-  // Mock ride progress simulation - replace with real API calls later
+
   useEffect(() => {
     let timer: number
     if (localRideInProgress && progress < 100) {
@@ -341,7 +364,6 @@ const PassengerHomeScreen = () => {
     router.push({
       pathname: "../(common)/rideTracker",
       params: {
-        // rideId: ride._id, // Removed because 'ride' is not defined here
         driverName: localDriverName,
         from: pickupLocation,
         to: destinationLocation,
@@ -352,6 +374,87 @@ const PassengerHomeScreen = () => {
       },
     })
   }
+
+  const KATHMANDU_BOUNDING_BOX = {
+    north: 27.85,
+    south: 27.60,
+    east: 85.55,
+    west: 85.20,
+  };
+  function isInKathmandu(lat: number, lng: number) {
+    return lat >= KATHMANDU_BOUNDING_BOX.south && lat <= KATHMANDU_BOUNDING_BOX.north &&
+      lng >= KATHMANDU_BOUNDING_BOX.west && lng <= KATHMANDU_BOUNDING_BOX.east;
+  }
+  const [routePolyline, setRoutePolyline] = useState<{ latitude: number; longitude: number }[]>([]);
+  const [loadingRoute, setLoadingRoute] = useState(false);
+  const mapRef = useRef<MapView>(null);
+
+  // Fetch route polyline when both pickup and dropoff are set
+  useEffect(() => {
+    const fetchRoute = async () => {
+      if (!pickupCoords || !destinationCoords) {
+        setRoutePolyline([]);
+        return;
+      }
+      // Check if both are in allowed areas
+      const inAllowedArea = isInKathmandu(pickupCoords.lat, pickupCoords.lng) && isInKathmandu(destinationCoords.lat, destinationCoords.lng);
+      if (!inAllowedArea) {
+        setRoutePolyline([]);
+        return;
+      }
+      setLoadingRoute(true);
+      try {
+        const route = await locationService.getRouteBetweenPoints(
+          { lat: pickupCoords.lat, lng: pickupCoords.lng },
+          { lat: destinationCoords.lat, lng: destinationCoords.lng }
+        );
+        const decodePolyline = (encoded: string): { latitude: number; longitude: number }[] => {
+          let points = [];
+          let index = 0, len = encoded.length;
+          let lat = 0, lng = 0;
+          while (index < len) {
+            let b, shift = 0, result = 0;
+            do {
+              b = encoded.charCodeAt(index++) - 63;
+              result |= (b & 0x1f) << shift;
+              shift += 5;
+            } while (b >= 0x20);
+            let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+            lat += dlat;
+            shift = 0;
+            result = 0;
+            do {
+              b = encoded.charCodeAt(index++) - 63;
+              result |= (b & 0x1f) << shift;
+              shift += 5;
+            } while (b >= 0x20);
+            let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+            lng += dlng;
+            points.push({
+              latitude: lat / 1e5,
+              longitude: lng / 1e5
+            });
+          }
+          return points;
+        };
+        setRoutePolyline(decodePolyline(route.polyline));
+        // Optionally fit map to route
+        if (mapRef.current && routePolyline.length > 0) {
+          const allCoords = [
+            { latitude: pickupCoords.lat, longitude: pickupCoords.lng },
+            { latitude: destinationCoords.lat, longitude: destinationCoords.lng },
+            ...decodePolyline(route.polyline)
+          ];
+          mapRef.current.fitToCoordinates(allCoords, { edgePadding: { top: 80, bottom: 80, left: 40, right: 40 }, animated: true });
+        }
+      } catch (e) {
+        setRoutePolyline([]);
+      }
+      setLoadingRoute(false);
+    };
+    fetchRoute();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickupCoords, destinationCoords]);
 
   return (
     <View style={styles.container}>
@@ -365,6 +468,7 @@ const PassengerHomeScreen = () => {
         )}
 
         <MapView
+          ref={mapRef}
           style={styles.map}
           provider={PROVIDER_GOOGLE}
           initialRegion={{
@@ -372,6 +476,20 @@ const PassengerHomeScreen = () => {
             longitude: currentLocation?.longitude || 85.324,
             latitudeDelta: 0.015,
             longitudeDelta: 0.0121,
+          }}
+          minZoomLevel={12}
+          maxZoomLevel={17}
+          onRegionChangeComplete={(region) => {
+            const lat = region.latitude;
+            const lng = region.longitude;
+            if (!isInKathmandu(lat, lng)) {
+              mapRef.current?.animateToRegion({
+                latitude: 27.7172,
+                longitude: 85.324,
+                latitudeDelta: 0.1,
+                longitudeDelta: 0.1,
+              }, 500);
+            }
           }}
         >
           {currentLocation && (
@@ -387,6 +505,27 @@ const PassengerHomeScreen = () => {
                 <MaterialIcons name="location-on" size={20} color="#4CAF50" />
               </View>
             </Marker>
+          )}
+          {pickupCoords && (
+            <Marker
+              coordinate={{ latitude: pickupCoords.lat, longitude: pickupCoords.lng }}
+              title="Pickup"
+              pinColor="#075B5E"
+            />
+          )}
+          {destinationCoords && (
+            <Marker
+              coordinate={{ latitude: destinationCoords.lat, longitude: destinationCoords.lng }}
+              title="Dropoff"
+              pinColor="#EA2F14"
+            />
+          )}
+          {routePolyline.length > 0 && (
+            <Polyline
+              coordinates={routePolyline}
+              strokeColor="#2196F3"
+              strokeWidth={4}
+            />
           )}
         </MapView>
       </View>
@@ -441,6 +580,7 @@ const PassengerHomeScreen = () => {
                 onLocationSelect={handlePickupLocationSelect}
                 iconColor="#075B5E"
                 disabled={loading}
+                boundingBox={KATHMANDU_BOUNDING_BOX}
               />
             </View>
 
@@ -452,26 +592,37 @@ const PassengerHomeScreen = () => {
                 onLocationSelect={handleDestinationLocationSelect}
                 iconColor="#EA2F14"
                 disabled={loading}
+                boundingBox={KATHMANDU_BOUNDING_BOX}
               />
             </View>
 
             <View style={styles.inputRow}>
-              <Text style={styles.rupeeSymbol}>₹</Text>
-              <TextInput
-                mode="flat"
-                placeholder="Offer your fare"
-                placeholderTextColor={"#ccc"}
-                value={offerPrice}
-                onChangeText={setOfferPrice}
-                style={[styles.fareInput, loading && styles.inputDisabled]}
-                keyboardType="numeric"
-                underlineColor="transparent"
-                activeUnderlineColor="transparent"
-                contentStyle={styles.inputContent}
-                editable={!loading}
-              />
+              {/* --- IMPROVED PRICE ADJUSTMENT UI: Rs inside pill, unified row --- */}
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <View style={styles.priceAdjustRow}>
+                  <TouchableOpacity
+                    style={[styles.adjustButton, { opacity: canAdjustPrice && adjustDownCount < 2 ? 1 : 0.5 }]}
+                    onPress={handleAdjustDown}
+                    disabled={!canAdjustPrice || adjustDownCount >= 2}
+                  >
+                    <Text style={styles.adjustButtonText}>-5</Text>
+                  </TouchableOpacity>
+                  <View style={styles.pricePill}>
+                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#333', textAlign: 'center' }}>
+                      ₹ {offerPrice ? (parseFloat(offerPrice) + priceAdjustment) : '--'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.adjustButton, { opacity: canAdjustPrice && adjustUpCount < 2 ? 1 : 0.5 }]}
+                    onPress={handleAdjustUp}
+                    disabled={!canAdjustPrice || adjustUpCount >= 2}
+                  >
+                    <Text style={styles.adjustButtonText}>+5</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
               <TouchableOpacity 
-                style={[styles.calculateButton, loading && styles.buttonDisabled]}
+                style={[styles.calculateButton, loading && styles.buttonDisabled, { marginLeft: 12 }]} 
                 onPress={calculateEstimatedFare}
                 disabled={loading}
               >
@@ -581,7 +732,7 @@ const styles = StyleSheet.create({
   bottomSheetContent: {
     paddingTop: 20,
     paddingHorizontal: 16,
-    paddingBottom: 8, // Reduce space for mini-player
+    paddingBottom: 8,
   },
   vehicleContainer: {
     flexDirection: "row",
@@ -759,6 +910,37 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.8)",
     justifyContent: "center",
     alignItems: "center",
+  },
+  priceAdjustRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 12,
+    gap: 10,
+  },
+  pricePill: {
+    minWidth: 80,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    marginHorizontal: 4,
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adjustButton: {
+    backgroundColor: '#075B5E',
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginHorizontal: 0,
+  },
+  adjustButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 })
 

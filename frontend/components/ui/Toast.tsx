@@ -58,7 +58,7 @@ const Toast: React.FC<ToastProps> = ({
         useNativeDriver: true,
       }),
     ]).start(() => {
-      onHide();
+      setTimeout(onHide, 0);
     });
   };
 

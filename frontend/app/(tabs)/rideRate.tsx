@@ -1,13 +1,38 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, TextInput, StatusBar, SafeAreaView, Animated } from "react-native"
+import React, { useState, useEffect } from "react"
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, TextInput, StatusBar, SafeAreaView, Animated, KeyboardAvoidingView, Platform, ScrollView } from "react-native"
 import Icon from "react-native-vector-icons/MaterialIcons"
 import { useRouter, useLocalSearchParams } from "expo-router"
 import { rideService } from '../utils/rideService'
 import webSocketService from '../utils/websocketService'
 
 const { width, height } = Dimensions.get("window")
+
+// Error boundary component
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: Error }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[RideRating ErrorBoundary] Caught error:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 10 }}>Something went wrong</Text>
+          <Text style={{ fontSize: 16, color: '#666', textAlign: 'center' }}>Please try refreshing the app.</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const RideRatingScreen = () => {
   const { driverName, from, to, fare, vehicle, rideId } = useLocalSearchParams()
@@ -112,120 +137,129 @@ const RideRatingScreen = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#075B5E" />
-
-      {/* Confetti Animation */}
-      {showConfetti && (
-        <Animated.View style={[styles.confetti, { opacity: confettiAnimation }]}>
-          {[...Array(20)].map((_, i) => (
-            <Animated.View
-              key={i}
-              style={[
-                styles.confettiPiece,
-                {
-                  backgroundColor: ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'][i % 5],
-                  left: Math.random() * width,
-                  top: Math.random() * height,
-                  transform: [{ rotate: `${Math.random() * 360}deg` }],
-                },
-              ]}
-            />
-          ))}
-        </Animated.View>
-      )}
-
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Rate Your Ride</Text>
-        <View style={styles.placeholder} />
-      </View>
-
-      <View style={styles.content}>
-        {/* Trip Summary Card */}
-        <View style={styles.tripCard}>
-          <View style={styles.tripHeader}>
-            <Icon name="check-circle" size={32} color="#4CAF50" />
-            <Text style={styles.tripCompleteText}>Trip Completed!</Text>
-          </View>
-
-          <View style={styles.tripDetails}>
-            <View style={styles.tripRow}>
-              <Icon name="person" size={20} color="#075B5E" />
-              <Text style={styles.tripLabel}>Driver:</Text>
-              <Text style={styles.tripValue}>{driverName}</Text>
-            </View>
-            <View style={styles.tripRow}>
-              <Icon name="directions-car" size={20} color="#075B5E" />
-              <Text style={styles.tripLabel}>Vehicle:</Text>
-              <Text style={styles.tripValue}>{vehicle}</Text>
-            </View>
-            <View style={styles.tripRow}>
-              <Icon name="payment" size={20} color="#075B5E" />
-              <Text style={styles.tripLabel}>Fare:</Text>
-              <Text style={styles.tripValue}>₹{fare}</Text>
-            </View>
-            <View style={styles.tripRow}>
-              <Icon name="location-on" size={20} color="#075B5E" />
-              <Text style={styles.tripLabel}>From:</Text>
-              <Text style={styles.tripValue} numberOfLines={1}>{from}</Text>
-            </View>
-            <View style={styles.tripRow}>
-              <Icon name="location-on" size={20} color="#EA2F14" />
-              <Text style={styles.tripLabel}>To:</Text>
-              <Text style={styles.tripValue} numberOfLines={1}>{to}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Rating Section */}
-        <View style={styles.ratingCard}>
-          <Text style={styles.ratingTitle}>How was your ride?</Text>
-          <Text style={styles.ratingSubtitle}>{getRatingText()}</Text>
-
-          <View style={styles.starContainer}>
-            {[1, 2, 3, 4, 5].map((star) => (
-              <TouchableOpacity key={star} onPress={() => handleStarPress(star - 1)} style={styles.starButton}>
-                <Icon name="star" size={40} color={rating >= star ? "#FFD700" : "#E0E0E0"} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Feedback Section */}
-        <View style={styles.feedbackCard}>
-          <Text style={styles.feedbackTitle}>Share your feedback</Text>
-          <TextInput
-            style={styles.feedbackInput}
-            placeholder="Tell us about your experience..."
-            placeholderTextColor="#999"
-            value={feedback}
-            onChangeText={setFeedback}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-          />
-        </View>
-
-        {/* Submit Button */}
-        <TouchableOpacity
-          style={[styles.submitButton, (rating === 0 || submitting) && styles.submitButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={rating === 0 || submitting}
+    <ErrorBoundary>
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
         >
-          <Text style={styles.submitButtonText}>{submitting ? 'Submitting...' : 'Submit Rating'}</Text>
-          <Icon name="send" size={20} color="#fff" style={styles.submitIcon} />
-        </TouchableOpacity>
+          {/* Optionally, wrap content in ScrollView for better keyboard handling */}
+          <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+            {/* Confetti Animation */}
+            {showConfetti && (
+              <Animated.View style={[styles.confetti, { opacity: confettiAnimation }]}>
+                {[...Array(20)].map((_, i) => (
+                  <Animated.View
+                    key={i}
+                    style={[
+                      styles.confettiPiece,
+                      {
+                        backgroundColor: ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'][i % 5],
+                        left: Math.random() * width,
+                        top: Math.random() * height,
+                        transform: [{ rotate: `${Math.random() * 360}deg` }],
+                      },
+                    ]}
+                  />
+                ))}
+              </Animated.View>
+            )}
 
-        {/* Skip Button */}
-        <TouchableOpacity style={styles.skipButton} onPress={() => router.push("/(tabs)")}>
-          <Text style={styles.skipButtonText}>Skip for now</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+            {/* Header */}
+            <View style={styles.header}>
+              <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                <Icon name="arrow-back" size={24} color="#000" />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Rate Your Ride</Text>
+              <View style={styles.placeholder} />
+            </View>
+
+            <View style={styles.content}>
+              {/* Trip Summary Card */}
+              <View style={styles.tripCard}>
+                <View style={styles.tripHeader}>
+                  <Icon name="check-circle" size={32} color="#4CAF50" />
+                  <Text style={styles.tripCompleteText}>Trip Completed!</Text>
+                </View>
+
+                <View style={styles.tripDetails}>
+                  <View style={styles.tripRow}>
+                    <Icon name="person" size={20} color="#075B5E" />
+                    <Text style={styles.tripLabel}>Driver:</Text>
+                    <Text style={styles.tripValue}>{driverName}</Text>
+                  </View>
+                  <View style={styles.tripRow}>
+                    <Icon name="directions-car" size={20} color="#075B5E" />
+                    <Text style={styles.tripLabel}>Vehicle:</Text>
+                    <Text style={styles.tripValue}>{vehicle}</Text>
+                  </View>
+                  <View style={styles.tripRow}>
+                    <Icon name="payment" size={20} color="#075B5E" />
+                    <Text style={styles.tripLabel}>Fare:</Text>
+                    <Text style={styles.tripValue}>₹{fare}</Text>
+                  </View>
+                  <View style={styles.tripRow}>
+                    <Icon name="location-on" size={20} color="#075B5E" />
+                    <Text style={styles.tripLabel}>From:</Text>
+                    <Text style={styles.tripValue} numberOfLines={1}>{from}</Text>
+                  </View>
+                  <View style={styles.tripRow}>
+                    <Icon name="location-on" size={20} color="#EA2F14" />
+                    <Text style={styles.tripLabel}>To:</Text>
+                    <Text style={styles.tripValue} numberOfLines={1}>{to}</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Rating Section */}
+              <View style={styles.ratingCard}>
+                <Text style={styles.ratingTitle}>How was your ride?</Text>
+                <Text style={styles.ratingSubtitle}>{getRatingText()}</Text>
+
+                <View style={styles.starContainer}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <TouchableOpacity key={star} onPress={() => handleStarPress(star - 1)} style={styles.starButton}>
+                      <Icon name="star" size={40} color={rating >= star ? "#FFD700" : "#E0E0E0"} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Feedback Section */}
+              <View style={styles.feedbackCard}>
+                <Text style={styles.feedbackTitle}>Share your feedback</Text>
+                <TextInput
+                  style={styles.feedbackInput}
+                  placeholder="Tell us about your experience..."
+                  placeholderTextColor="#999"
+                  value={feedback}
+                  onChangeText={setFeedback}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                />
+              </View>
+
+              {/* Submit Button */}
+              <TouchableOpacity
+                style={[styles.submitButton, (rating === 0 || submitting) && styles.submitButtonDisabled]}
+                onPress={handleSubmit}
+                disabled={rating === 0 || submitting}
+              >
+                <Text style={styles.submitButtonText}>{submitting ? 'Submitting...' : 'Submit Rating'}</Text>
+                <Icon name="send" size={20} color="#fff" style={styles.submitIcon} />
+              </TouchableOpacity>
+
+              {/* Skip Button */}
+              <TouchableOpacity style={styles.skipButton} onPress={() => router.push("/(tabs)")}>
+                <Text style={styles.skipButtonText}>Skip</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </ErrorBoundary>
   )
 }
 

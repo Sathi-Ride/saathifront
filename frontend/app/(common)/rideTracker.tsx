@@ -30,6 +30,95 @@ import * as Haptics from 'expo-haptics';
 
 const { width, height } = Dimensions.get('window');
 
+// Add bounding boxes and isInAllowedArea at the top-level
+const KATHMANDU_BOUNDING_BOX = {
+  north: 27.85,
+  south: 27.60,
+  east: 85.55,
+  west: 85.20,
+};
+function isInAllowedArea(lat: number, lng: number) {
+  return lat >= KATHMANDU_BOUNDING_BOX.south && lat <= KATHMANDU_BOUNDING_BOX.north &&
+    lng >= KATHMANDU_BOUNDING_BOX.west && lng <= KATHMANDU_BOUNDING_BOX.east;
+}
+
+// Restrict pickup and dropoff to Kathmandu Valley only
+function isInKathmandu(lat: number, lng: number) {
+  return lat >= KATHMANDU_BOUNDING_BOX.south && lat <= KATHMANDU_BOUNDING_BOX.north &&
+    lng >= KATHMANDU_BOUNDING_BOX.west && lng <= KATHMANDU_BOUNDING_BOX.east;
+}
+
+// For testing: get a random driver location within 100m of pickup
+async function getTestDriverLocation(pickup: {lat: number, lng: number} | null) {
+  if (!pickup) return null;
+  const bearing = Math.random() * 2 * Math.PI;
+  const distance = Math.random() * 0.1; // 0.1 km = 100m
+  const R = 6371; // Earth radius in km
+  const lat1 = pickup.lat * Math.PI / 180;
+  const lng1 = pickup.lng * Math.PI / 180;
+  const lat2 = Math.asin(Math.sin(lat1) * Math.cos(distance / R) + Math.cos(lat1) * Math.sin(distance / R) * Math.cos(bearing));
+  const lng2 = lng1 + Math.atan2(Math.sin(bearing) * Math.sin(distance / R) * Math.cos(lat1), Math.cos(distance / R) - Math.sin(lat1) * Math.sin(lat2));
+  return {
+    lat: lat2 * 180 / Math.PI,
+    lng: lng2 * 180 / Math.PI,
+  };
+}
+
+// Add a flag to toggle between test mode and real GPS
+const USE_TEST_DRIVER_LOCATION = true; // Set to false for real GPS
+
+// Track highest progress value globally for this module
+const lastProgressRef = { current: 0 };
+
+// Error boundary component to handle useInsertionEffect errors gracefully
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[ErrorBoundary] Caught error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <MaterialIcons name="error" size={48} color="#F44336" />
+          <Text style={{ fontSize: 18, fontWeight: 'bold', marginTop: 16, textAlign: 'center' }}>
+            Something went wrong
+          </Text>
+          <Text style={{ fontSize: 14, marginTop: 8, textAlign: 'center', color: '#666' }}>
+            Please try refreshing the app
+          </Text>
+          <TouchableOpacity
+            style={{
+              backgroundColor: '#075B5E',
+              paddingHorizontal: 20,
+              paddingVertical: 10,
+              borderRadius: 8,
+              marginTop: 16
+            }}
+            onPress={() => this.setState({ hasError: false })}
+          >
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 // Ride interface based on backend response
 interface Ride {
   _id?: string;
@@ -71,9 +160,30 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const distance = R * c;
-  console.log('[calculateDistance] lat1:', lat1, 'lon1:', lon1, 'lat2:', lat2, 'lon2:', lon2, 'distance:', distance);
+  // console.log('[calculateDistance] lat1:', lat1, 'lon1:', lon1, 'lat2:', lat2, 'lon2:', lon2, 'distance:', distance);
   return distance;
 };
+
+// Find closest point index on polyline
+function findClosestPointIndex(polyline: {latitude: number; longitude: number}[], point: {lat: number; lng: number}): number {
+  let minDistance = Infinity;
+  let closestIndex = 0;
+  
+  for (let i = 0; i < polyline.length; i++) {
+    const distance = calculateDistance(
+      point.lat,
+      point.lng,
+      polyline[i].latitude,
+      polyline[i].longitude
+    );
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestIndex = i;
+    }
+  }
+  
+  return closestIndex;
+}
 
 // Progress calculation is handled entirely by the backend
 // No local calculation needed
@@ -89,126 +199,200 @@ const simulateDriverMovement = async (
   setSimulating: (v: boolean) => void,
   userRole: 'driver' | 'passenger',
   rideStatusRef: React.RefObject<string>,
+  rideStartTime: number | null,
+  mainRoutePolyline: { latitude: number; longitude: number }[]
+) => {
+  setSimulating(true);
+  locationService.stopLocationTracking();
+  if (!mainRoutePolyline || mainRoutePolyline.length === 0) {
+    await simulateStraightLineMovement(rideId, startLocation, pickupLocation, dropoffLocation, onLocationUpdate, onProgressUpdate, setSimulating, userRole, rideStatusRef, rideStartTime);
+    return;
+  }
+  const stepDelay = 1000;
+  const startIdx = findClosestPointIndex(mainRoutePolyline, startLocation);
+  const pickupIdx = findClosestPointIndex(mainRoutePolyline, pickupLocation);
+  const dropoffIdx = findClosestPointIndex(mainRoutePolyline, dropoffLocation);
+  // Phase 1: Start to Pickup (0-10% progress)
+  const phase1Steps = 25;
+  for (let i = 0; i <= phase1Steps; i++) {
+    if (rideStatusRef.current === 'cancelled' || rideStatusRef.current !== 'in-progress') break;
+    const t = i / phase1Steps;
+    const currentIdx = Math.floor(startIdx + (pickupIdx - startIdx) * t);
+    const currentPoint = mainRoutePolyline[currentIdx];
+    const location = { lat: currentPoint.latitude, lng: currentPoint.longitude };
+    onLocationUpdate(location);
+    const progress = Math.round(t * 10);
+    if (progress >= lastProgressRef.current) {
+      lastProgressRef.current = progress;
+      onProgressUpdate(progress);
+    }
+    // Always send simulated location to backend
+    if (userRole === 'driver') {
+      try {
+        await webSocketService.emitEvent(
+          'updateRideLocation',
+          { latitude: currentPoint.latitude, longitude: currentPoint.longitude },
+          (response: any) => {},
+          'ride'
+        );
+      } catch (error: any) {
+        // Suppress expected errors
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, stepDelay));
+  }
+  // Phase 2: Pickup to Dropoff (10-100% progress)
+  const phase2Steps = 25;
+  for (let i = 0; i <= phase2Steps; i++) {
+    if (rideStatusRef.current === 'cancelled' || rideStatusRef.current !== 'in-progress') break;
+    const t = i / phase2Steps;
+    const currentIdx = Math.floor(pickupIdx + (dropoffIdx - pickupIdx) * t);
+    const currentPoint = mainRoutePolyline[currentIdx];
+    const location = { lat: currentPoint.latitude, lng: currentPoint.longitude };
+    onLocationUpdate(location);
+    const progress = Math.round(10 + t * 90);
+    if (progress >= lastProgressRef.current) {
+      lastProgressRef.current = progress;
+      onProgressUpdate(progress);
+    }
+    // Always send simulated location to backend
+    if (userRole === 'driver') {
+      try {
+        await webSocketService.emitEvent(
+          'updateRideLocation',
+          { latitude: currentPoint.latitude, longitude: currentPoint.longitude },
+          (response: any) => {},
+          'ride'
+        );
+      } catch (error: any) {
+        // Suppress expected errors
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, stepDelay));
+  }
+  setSimulating(false);
+};
+
+// Fallback straight line movement function
+const simulateStraightLineMovement = async (
+  rideId: string,
+  startLocation: { lat: number; lng: number },
+  pickupLocation: { lat: number; lng: number },
+  dropoffLocation: { lat: number; lng: number },
+  onLocationUpdate: (location: { lat: number; lng: number }) => void,
+  onProgressUpdate: (progress: number) => void,
+  setSimulating: (v: boolean) => void,
+  userRole: 'driver' | 'passenger',
+  rideStatusRef: React.RefObject<string>,
   rideStartTime: number | null
 ) => {
-  console.log('[simulateDriverMovement] Starting simulation from:', startLocation, 'to pickup:', pickupLocation, 'then dropoff:', dropoffLocation);
+  console.log('[simulateStraightLineMovement] Using straight line movement');
   setSimulating(true);
   locationService.stopLocationTracking();
   const totalSteps = 50;
-  const stepDelay = 1000; // Increased from 200ms to 1000ms to slow down simulation
+  const stepDelay = 1000;
 
   onLocationUpdate(startLocation);
-  // Progress will be updated by backend via WebSocket
 
-      // Phase 1: Current location to pickup (0-25%)
+  // Phase 1: Current location to pickup (0-10%)
   for (let i = 0; i <= totalSteps; i++) {
-    if (rideStatusRef.current === 'cancelled') {
-      console.log('[simulateDriverMovement] Ride cancelled, stopping simulation');
-      break;
-    }
-    if (rideStatusRef.current !== 'in-progress') {
-      console.log('[simulateDriverMovement] Ride status changed to', rideStatusRef.current, 'stopping simulation');
+    if (rideStatusRef.current === 'cancelled' || rideStatusRef.current !== 'in-progress') {
       break;
     }
     const t = i / totalSteps;
     const currentLat = startLocation.lat + (pickupLocation.lat - startLocation.lat) * t;
     const currentLng = startLocation.lng + (pickupLocation.lng - startLocation.lng) * t;
     const location = { lat: currentLat, lng: currentLng };
-    console.log('[simulateDriverMovement] Phase 1, step', i, 'location:', location);
+    
     onLocationUpdate(location);
+    const progress = Math.round(t * 10);
+    onProgressUpdate(progress);
     
-    // Backend will calculate progress automatically
-    console.log('[simulateDriverMovement] Phase 1, step', i, 'location:', location);
-    // Progress will be updated by backend via WebSocket
-    
-    if (userRole === 'driver') {
+    if (userRole === 'driver' && !USE_TEST_DRIVER_LOCATION) {
       try {
         webSocketService.emitEvent(
           'updateRideLocation',
           { latitude: currentLat, longitude: currentLng },
           (response: any) => {
-            console.log('[simulateDriverMovement] updateRideLocation response:', response);
+            console.log('[simulateStraightLineMovement] updateRideLocation response:', response);
           },
           'ride'
         );
       } catch (error: any) {
-        console.error('[simulateDriverMovement] WebSocket error:', error);
-        // Suppress 400 errors during simulation - they're expected if backend rejects updates
-        if (error.message?.includes('400') || error.message?.includes('Failed to update location5')) {
-          console.log('[simulateDriverMovement] Suppressed expected 400 error during simulation');
-        } else {
-          // Only log non-400 errors
-          console.error('[simulateDriverMovement] Non-400 error during simulation:', error);
-        }
+        console.error('[simulateStraightLineMovement] WebSocket error:', error);
       }
     }
     await new Promise(resolve => setTimeout(resolve, stepDelay));
   }
 
-      // Phase 2: Pickup to dropoff (25-100%)
+  // Phase 2: Pickup to dropoff (10-100%)
   for (let i = 0; i <= totalSteps; i++) {
-    if (rideStatusRef.current === 'cancelled') {
-      console.log('[simulateDriverMovement] Ride cancelled, stopping simulation');
-      break;
-    }
-    if (rideStatusRef.current !== 'in-progress') {
-      console.log('[simulateDriverMovement] Ride status changed to', rideStatusRef.current, 'stopping simulation');
+    if (rideStatusRef.current === 'cancelled' || rideStatusRef.current !== 'in-progress') {
       break;
     }
     const t = i / totalSteps;
     const currentLat = pickupLocation.lat + (dropoffLocation.lat - pickupLocation.lat) * t;
     const currentLng = pickupLocation.lng + (dropoffLocation.lng - pickupLocation.lng) * t;
     const location = { lat: currentLat, lng: currentLng };
-    console.log('[simulateDriverMovement] Phase 2, step', i, 'location:', location);
+    
     onLocationUpdate(location);
+    const progress = Math.round(10 + t * 90);
+    onProgressUpdate(progress);
     
-    // Backend will calculate progress automatically
-    console.log('[simulateDriverMovement] Phase 2, step', i, 'location:', location);
-    // Progress will be updated by backend via WebSocket
-    
-    if (userRole === 'driver') {
+    if (userRole === 'driver' && !USE_TEST_DRIVER_LOCATION) {
       try {
         await webSocketService.emitEvent(
           'updateRideLocation',
           { latitude: currentLat, longitude: currentLng },
           (response: any) => {
-            console.log('[simulateDriverMovement] updateRideLocation response:', response);
+            console.log('[simulateStraightLineMovement] updateRideLocation response:', response);
           },
           'ride'
         );
       } catch (error: any) {
-        console.error('[simulateDriverMovement] WebSocket error:', error);
-        // Suppress 400 errors during simulation - they're expected if backend rejects updates
-        if (error.message?.includes('400') || error.message?.includes('Failed to update location4')) {
-          console.log('[simulateDriverMovement] Suppressed expected 400 error during simulation');
-        } else {
-          // Only log non-400 errors
-          console.error('[simulateDriverMovement] Non-400 error during simulation:', error);
-        }
+        console.error('[simulateStraightLineMovement] WebSocket error:', error);
       }
     }
     await new Promise(resolve => setTimeout(resolve, stepDelay));
   }
 
   setSimulating(false);
-  console.log('[simulateDriverMovement] Simulation complete, rideStatus:', rideStatusRef.current);
-  if (rideStatusRef.current === 'in-progress' && userRole === 'driver') {
-    console.log('[simulateDriverMovement] Resuming real GPS tracking');
-    locationService.startLocationTracking(
-      async (newLocation) => {
-        if (rideStatusRef.current === 'in-progress') {
-          onLocationUpdate({ lat: newLocation.latitude, lng: newLocation.longitude });
-        }
-      },
-      { accuracy: Location.Accuracy.Balanced, timeInterval: 10000, distanceInterval: 50 } // Use same intervals as real tracking
-    );
-  }
 };
 
 // Memoized MapView to prevent unnecessary re-renders
 const MemoizedMapView = React.memo(MapView);
 
 const RideTrackerScreen = () => {
+  // Add error boundary for useInsertionEffect errors
+  const [hasError, setHasError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  if (hasError) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+        <MaterialIcons name="error" size={48} color="#F44336" />
+        <Text style={{ fontSize: 18, fontWeight: 'bold', marginTop: 16, textAlign: 'center' }}>
+          Something went wrong
+        </Text>
+        <Text style={{ fontSize: 14, marginTop: 8, textAlign: 'center', color: '#666' }}>
+          {errorMessage || 'Please try refreshing the app'}
+        </Text>
+        <TouchableOpacity
+          style={{
+            backgroundColor: '#075B5E',
+            paddingHorizontal: 20,
+            paddingVertical: 10,
+            borderRadius: 8,
+            marginTop: 16
+          }}
+          onPress={() => setHasError(false)}
+        >
+          <Text style={{ color: '#fff', fontWeight: 'bold' }}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   // --- PARAMS & ROUTER ---
   const params = useLocalSearchParams();
   const router = useRouter();
@@ -260,6 +444,9 @@ const RideTrackerScreen = () => {
     actionText: undefined,
     onAction: undefined,
   });
+  const [mainRoutePolyline, setMainRoutePolyline] = useState<{ latitude: number; longitude: number }[]>([]);
+  const [loadingRoute, setLoadingRoute] = useState(false);
+  const mapRef = useRef<MapView>(null);
 
   // --- ANIMATION REFS ---
   const progressAnimation = useRef(new Animated.Value(0)).current;
@@ -645,6 +832,7 @@ const RideTrackerScreen = () => {
   const handleRideLocationUpdated = useCallback(
     throttle(
       (response: any) => {
+        console.log('[handleRideLocationUpdated][TOP] Called with:', response, 'userRole:', userRole);
         console.log('[handleRideLocationUpdated] Received:', response);
         if (!response || !response.data || response.data._id !== rideId) {
           console.log('[handleRideLocationUpdated] Invalid or mismatched rideId:', response?.data?._id);
@@ -679,78 +867,48 @@ const RideTrackerScreen = () => {
         }
         const newLocation = { lat: data.currLocation.latitude, lng: data.currLocation.longitude };
 
-        // Update driver location and route immediately
-        setDriverLocation(newLocation);
-        setCompletedRoute(prev => {
-          const newRoute = [...prev.slice(-100), newLocation];
-          console.log('[handleRideLocationUpdated] Updated completedRoute:', newRoute);
-          return newRoute;
-        });
+        // CRITICAL: Only update driver location if test mode is disabled
+        // If test mode is enabled, the test location should not be overridden by backend updates
+        if (!USE_TEST_DRIVER_LOCATION || userRole !== 'driver') {
+          // Update driver location and route immediately
+          setDriverLocation(newLocation);
+          setCompletedRoute(prev => {
+            const newRoute = [...prev.slice(-100), newLocation];
+            console.log('[handleRideLocationUpdated] Updated completedRoute:', newRoute);
+            return newRoute;
+          });
+          console.log('[handleRideLocationUpdated] Updated driver location from backend:', newLocation);
+        } else {
+          console.log('[handleRideLocationUpdated] Test mode enabled - ignoring backend driver location update:', newLocation);
+        }
         
-        // Handle progress updates with proper state management
-        if (data.progress !== undefined) {
-          console.log('[handleRideLocationUpdated] Using backend-calculated progress:', data.progress, 'userRole:', userRole);
-          
-          // CRITICAL FIX: Ensure progress never goes backwards from 0%
-          // When ride starts, progress should be 0% and only increase from there
-          const newProgress = data.progress;
-          
-          // Check if driver has actually moved from initial position
-          let driverHasMoved = false;
-          if (initialDriverLocationRef.current && newLocation) {
-            const distance = calculateDistance(
-              initialDriverLocationRef.current.lat,
-              initialDriverLocationRef.current.lng,
-              newLocation.lat,
-              newLocation.lng
-            );
-            driverHasMoved = distance > 0.01; // 10 meters threshold
-            console.log('[handleRideLocationUpdated] Driver movement check:', { distance, driverHasMoved });
-          }
-          
-          // Use functional state update to avoid stale closure issues
-          setProgress(currentProgress => {
-            // If this is the first location update after ride start, ensure we start at 0%
-            if (rideStartedConfirmedRef.current && !progressStartedRef.current && newProgress > 0) {
-              console.log('[handleRideLocationUpdated] First location update after ride start, ensuring progress starts at 0%');
-              // Only allow progress to start if driver has actually moved
-              if (driverHasMoved) {
-                console.log('[handleRideLocationUpdated] Driver has moved, allowing progress to start');
-                progressStartedRef.current = true;
-                return newProgress;
-              } else {
-                console.log('[handleRideLocationUpdated] Driver has not moved yet, keeping progress at 0%');
-                return currentProgress; // Keep current progress
-              }
-            }
-            
-            // Only update progress if it's greater than current progress (never go backwards)
-            if (newProgress >= currentProgress) {
-              progressStartedRef.current = true; // Mark that progress has started updating
-              return newProgress;
+        // --- PROGRESS UPDATE ---
+        if (typeof data.progress === 'number') {
+          setProgress(prev => {
+            if (data.progress >= lastProgressRef.current) {
+              lastProgressRef.current = data.progress;
+              progressStartedRef.current = true;
+              return data.progress;
             } else {
-              console.log('[handleRideLocationUpdated] Ignoring backwards progress update:', newProgress, 'current:', currentProgress);
-              return currentProgress; // Keep current progress
+              // Ignore backwards progress update
+              return prev;
             }
           });
-          
-          // Animate progress after state update
-          // Use setTimeout to ensure state update completes before animation
           setTimeout(() => {
             Animated.timing(progressAnimation, {
-              toValue: newProgress,
+              toValue: Math.max(data.progress, lastProgressRef.current),
               duration: 500,
               useNativeDriver: false,
             }).start();
           }, 0);
-        } else {
-          console.log('[handleRideLocationUpdated] No progress data from backend, userRole:', userRole);
+          console.log('[handleRideLocationUpdated] Progress update received:', data.progress, 'userRole:', userRole);
         }
+        // ... rest of handler ...
       },
-      1000, // Increased throttle to 1 second to reduce frequency
-      { leading: false }
+      1000,
+      { leading: true, trailing: true }
     ),
-    [rideId, rideStartTime]
+    [rideId, userRole, progressAnimation]
   );
 
   // --- INITIALIZE LOCATION TRACKING ---
@@ -771,6 +929,13 @@ const RideTrackerScreen = () => {
         return;
       }
       
+      // CRITICAL: If test mode is enabled for drivers, DO NOT start GPS tracking
+      if (userRole === 'driver' && USE_TEST_DRIVER_LOCATION) {
+        console.log('[initializeLocationTracking] Test mode enabled - skipping GPS tracking for driver');
+        locationTrackingStartedRef.current = true;
+        return;
+      }
+      
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         console.error('[initializeLocationTracking] Location permission denied');
@@ -787,26 +952,31 @@ const RideTrackerScreen = () => {
       
       if (userRole === 'driver') {
         // For drivers: start continuous location tracking for ride updates
-        const location = await locationService.getCurrentLocation();
-        console.log('[initializeLocationTracking] Driver initial location:', location);
-        updateDriverLocationRef.current({ lat: location.latitude, lng: location.longitude });
-        
-        await locationService.startLocationTracking(
-          async (newLocation) => {
-            // Only update location if user is driver and ride is in progress
-            if (userRole === 'driver' && rideStatusRef.current === 'in-progress' && !simulating) {
-              console.log('[initializeLocationTracking] Driver new location:', newLocation);
-              updateDriverLocationRef.current({ lat: newLocation.latitude, lng: newLocation.longitude });
+        // Only if test mode is disabled
+        if (!USE_TEST_DRIVER_LOCATION) {
+          const location = await locationService.getCurrentLocation();
+          console.log('[initializeLocationTracking] Driver initial location:', location);
+          updateDriverLocationRef.current({ lat: location.latitude, lng: location.longitude });
+          
+          await locationService.startLocationTracking(
+            async (newLocation) => {
+              // Only update location if user is driver and ride is in progress
+              if (userRole === 'driver' && rideStatusRef.current === 'in-progress' && !simulating) {
+                console.log('[initializeLocationTracking] Driver new location:', newLocation);
+                updateDriverLocationRef.current({ lat: newLocation.latitude, lng: newLocation.longitude });
+              }
+            },
+            { 
+              accuracy: Location.Accuracy.Balanced, 
+              timeInterval: 10000, // Increased to 10 seconds to reduce frequency
+              distanceInterval: 50, // Increased to 50 meters
+              role: 'driver'
             }
-          },
-          { 
-            accuracy: Location.Accuracy.Balanced, 
-            timeInterval: 10000, // Increased to 10 seconds to reduce frequency
-            distanceInterval: 50, // Increased to 50 meters
-            role: 'driver'
-          }
-        );
-        console.log('[initializeLocationTracking] Started continuous tracking for driver');
+          );
+          console.log('[initializeLocationTracking] Started continuous tracking for driver');
+        } else {
+          console.log('[initializeLocationTracking] Test mode enabled - GPS tracking disabled for driver');
+        }
         locationTrackingStartedRef.current = true;
       } else if (userRole === 'passenger') {
         // For passengers: NO location tracking at all during rides
@@ -825,7 +995,7 @@ const RideTrackerScreen = () => {
     isMounted.current = true;
     console.log('[RideTracker] Setup effect for rideId:', rideId, 'userRole:', userRole);
     
-    const setupWebSocketAndFetch = async () => {
+        const setupWebSocketAndFetch = async () => {
       try {
         setIsLoadingDetails(true);
         
@@ -926,21 +1096,69 @@ const RideTrackerScreen = () => {
             setCompletedRoute([initialLocation]);
             console.log('[setupWebSocketAndFetch] Set initial driverLocation:', initialLocation);
           } else if (userRole === 'driver') {
-            const location = await locationService.getCurrentLocation();
-            const initialLocation = { lat: location.latitude, lng: location.longitude };
-            setDriverLocation(initialLocation);
-            setCompletedRoute([initialLocation]);
-            console.log('[setupWebSocketAndFetch] Set driverLocation from GPS:', initialLocation);
+            // For drivers, use test location if enabled, otherwise use real GPS
+            if (USE_TEST_DRIVER_LOCATION && pickupLocation) {
+              const testLocation = await getTestDriverLocation(pickupLocation);
+              if (testLocation) {
+                setDriverLocation(testLocation);
+                setCompletedRoute([testLocation]);
+                console.log('[setupWebSocketAndFetch] Set test driverLocation near pickup:', testLocation);
+              }
+            } else if (!USE_TEST_DRIVER_LOCATION) {
+              // Only use real GPS if test mode is OFF
+              try {
+                const location = await locationService.getCurrentLocation();
+                const initialLocation = { lat: location.latitude, lng: location.longitude };
+                setDriverLocation(initialLocation);
+                setCompletedRoute([initialLocation]);
+                console.log('[setupWebSocketAndFetch] Set driverLocation from GPS:', initialLocation);
+              } catch (error) {
+                console.error('[setupWebSocketAndFetch] Failed to get GPS location:', error);
+                // Fallback to a default location in Kathmandu
+                const fallbackLocation = { lat: 27.7172, lng: 85.3240 };
+                setDriverLocation(fallbackLocation);
+                setCompletedRoute([fallbackLocation]);
+                console.log('[setupWebSocketAndFetch] Set fallback driverLocation:', fallbackLocation);
+              }
+            }
+            // If USE_TEST_DRIVER_LOCATION is true but pickupLocation is not available yet,
+            // the useEffect will handle setting the test location once pickupLocation is set
           } else if (userRole === 'passenger') {
             // For passengers, if no current location is available, use a default location
             // This will be updated when the driver sends their first location update
-            const defaultLocation = {
-              lat: pickupLocation?.lat || 26.6587,
-              lng: pickupLocation?.lng || 87.3255,
+            let defaultLocation = {
+              lat: pickupLocation?.lat || 27.7172,
+              lng: pickupLocation?.lng || 85.3240,
             };
-            setDriverLocation(defaultLocation);
-            setCompletedRoute([defaultLocation]);
-            console.log('[setupWebSocketAndFetch] Set default driverLocation for passenger:', defaultLocation);
+            // Only use details.currLocation if it is in Kathmandu and within 2km of pickup
+            if (
+              details?.currLocation &&
+              isInKathmandu(details.currLocation.latitude, details.currLocation.longitude) &&
+              pickupLocation &&
+              calculateDistance(
+                details.currLocation.latitude,
+                details.currLocation.longitude,
+                pickupLocation.lat,
+                pickupLocation.lng
+              ) < 2
+            ) {
+              setDriverLocation({
+                lat: details.currLocation.latitude,
+                lng: details.currLocation.longitude,
+              });
+              setCompletedRoute([
+                {
+                  lat: details.currLocation.latitude,
+                  lng: details.currLocation.longitude,
+                },
+              ]);
+              console.log('[setupWebSocketAndFetch] Set initial driverLocation for passenger:', details.currLocation);
+            } else {
+              // Do not set driver location or draw polyline until a valid update is received
+              setDriverLocation(null);
+              setCompletedRoute([]);
+              console.log('[setupWebSocketAndFetch] No valid initial driverLocation for passenger, waiting for update');
+            }
           }
         }
         setIsLoadingDetails(false);
@@ -978,10 +1196,12 @@ const RideTrackerScreen = () => {
           setRideStatus('in-progress');
           rideStartedConfirmedRef.current = true;
           setProgress(0);
-          setRideStartTime(Date.now());
-          
-          // Reset progress tracking
           progressStartedRef.current = false;
+          Animated.timing(progressAnimation, {
+            toValue: 0,
+            duration: 500,
+            useNativeDriver: false,
+          }).start();
           
           // Update driver location if provided in the event
           if (data?.data?.currLocation) {
@@ -999,13 +1219,6 @@ const RideTrackerScreen = () => {
             initialDriverLocationRef.current = { ...driverLocation };
             console.log('[rideStarted] Initial driver location:', initialDriverLocationRef.current);
           }
-          
-          // Animate progress to 0%
-          Animated.timing(progressAnimation, {
-            toValue: 0,
-            duration: 500,
-            useNativeDriver: false,
-          }).start();
           
           showToast('Ride started!', 'success');
           console.log('[rideStarted] Progress will stay at 0% until driver moves');
@@ -1167,9 +1380,14 @@ const RideTrackerScreen = () => {
       ).start();
     };
     
-    setupWebSocketAndFetch();
+    setupWebSocketAndFetch().catch(error => {
+      console.error('[RideTracker] Error in setupWebSocketAndFetch:', error);
+      setErrorMessage('Failed to setup ride tracking');
+      setHasError(true);
+    });
+    
     if (userRole === 'driver' && rideStatus === 'in-progress' && rideStartedConfirmedRef.current) {
-    initializeLocationTracking();
+      initializeLocationTracking();
     }
     startPulseAnimation();
     
@@ -1216,146 +1434,64 @@ const RideTrackerScreen = () => {
   }, [userRole, rideStatus, simulating, rideStartedConfirmedRef.current]);
 
   // --- GENERATE ROUTE POLYLINES ---
-  const generateRoutePolylines = () => {
-    // If ride is cancelled, return empty array to prevent errors
-    if (rideStatus === 'cancelled') {
-      console.log('[generateRoutePolylines] Ride is cancelled, returning empty polylines');
-      return [];
-    }
-    
-    if (!pickupLocation || !dropoffLocation || !driverLocation) {
-      console.log('[generateRoutePolylines] Missing location data, returning fallback polylines');
-      return [
-        {
-          coordinates: [
-            { latitude: pickupLocation?.lat || 26.6587, longitude: pickupLocation?.lng || 87.3255 },
-            { latitude: dropoffLocation?.lat || 26.6587, longitude: dropoffLocation?.lng || 87.3255 },
-          ],
-          strokeColor: '#2196F3',
-          strokeWidth: 4,
-          lineDashPattern: [10, 5],
-          key: 'fallback-route',
-        },
-      ];
-    }
-    
-    // Ensure driver location is not exactly the same as pickup location to avoid distance calculation issues
-    const driverLoc = {
-      lat: driverLocation.lat,
-      lng: driverLocation.lng,
-    };
-    
-    // If driver is very close to pickup (within 10 meters), use pickup location
-    const toPickupDistance = calculateDistance(
-      driverLoc.lat,
-      driverLoc.lng,
-      pickupLocation.lat,
-      pickupLocation.lng
-    );
-    
-    if (toPickupDistance < 0.01) { // 10 meters
-      console.log('[generateRoutePolylines] Driver very close to pickup, using pickup location');
-      driverLoc.lat = pickupLocation.lat;
-      driverLoc.lng = pickupLocation.lng;
-    }
-
-    const polylines = [];
-
-    if (rideStatus === 'accepted') {
-      // Show driver's path to pickup
-      const toPickupRoute = [...completedRoute, driverLoc];
-      if (toPickupRoute.length > 1) {
-        polylines.push({
-          coordinates: toPickupRoute.map(loc => ({ latitude: loc.lat, longitude: loc.lng })),
-          strokeColor: '#4CAF50',
-          strokeWidth: 6,
-          key: 'completed-to-pickup',
-        });
+  // Helper to find closest point index on polyline
+  function findClosestPointIndex(polyline: {latitude: number; longitude: number}[], point: {lat: number; lng: number}): number {
+    let minDist = Infinity;
+    let minIdx = 0;
+    for (let i = 0; i < polyline.length; i++) {
+      const d = calculateDistance(polyline[i].latitude, polyline[i].longitude, point.lat, point.lng);
+      if (d < minDist) {
+        minDist = d;
+        minIdx = i;
       }
+    }
+    return minIdx;
+  }
+
+  const generateRoutePolylines = () => {
+    if (rideStatus === 'cancelled' || mainRoutePolyline.length === 0) return [];
+    if (!pickupLocation || !dropoffLocation || !driverLocation) return [];
+
+    // Find closest point on polyline to driver
+    const driverIdx = findClosestPointIndex(mainRoutePolyline, driverLocation);
+    const pickupIdx = findClosestPointIndex(mainRoutePolyline, pickupLocation);
+    const dropoffIdx = findClosestPointIndex(mainRoutePolyline, dropoffLocation);
+
+    let polylines = [];
+
+    // Draw car-to-pickup segment using Directions API polyline
+    if (driverIdx < pickupIdx) {
       polylines.push({
-        coordinates: [
-          { latitude: driverLoc.lat, longitude: driverLoc.lng },
-          { latitude: pickupLocation.lat, longitude: pickupLocation.lng },
-        ],
+        coordinates: mainRoutePolyline.slice(driverIdx, pickupIdx + 1),
+        strokeColor: '#FF9800',
+        strokeWidth: 4,
+        zIndex: 1,
+        key: 'car-to-pickup',
+      });
+    }
+
+    // Pickup to dropoff (main route)
+    if (pickupIdx < dropoffIdx) {
+      polylines.push({
+        coordinates: mainRoutePolyline.slice(pickupIdx, dropoffIdx + 1),
         strokeColor: '#2196F3',
         strokeWidth: 4,
-        lineDashPattern: [10, 5],
-        key: 'remaining-to-pickup',
+        zIndex: 1,
+        key: 'pickup-to-dropoff',
       });
-    } else if (rideStatus === 'in-progress' || rideStatus === 'completed') {
-      // Check if driver has reached pickup
-      const toPickupDistance = calculateDistance(
-        driverLoc.lat,
-        driverLoc.lng,
-        pickupLocation.lat,
-        pickupLocation.lng
-      );
-      
-      if (toPickupDistance > 0.05) {
-        // Driver is still moving to pickup - show driver to pickup route
-        const toPickupRoute = [...completedRoute, driverLoc];
-        if (toPickupRoute.length > 1) {
-          polylines.push({
-            coordinates: toPickupRoute.map(loc => ({ latitude: loc.lat, longitude: loc.lng })),
-            strokeColor: '#4CAF50',
-            strokeWidth: 6,
-            key: 'completed-to-pickup',
-          });
-        }
-        polylines.push({
-          coordinates: [
-            { latitude: driverLoc.lat, longitude: driverLoc.lng },
-            { latitude: pickupLocation.lat, longitude: pickupLocation.lng },
-          ],
-          strokeColor: '#2196F3',
-          strokeWidth: 4,
-          lineDashPattern: [10, 5],
-          key: 'remaining-to-pickup',
-        });
-        
-        // Also show the future route from pickup to dropoff (dotted line)
-        polylines.push({
-          coordinates: [
-            { latitude: pickupLocation.lat, longitude: pickupLocation.lng },
-            { latitude: dropoffLocation.lat, longitude: dropoffLocation.lng },
-          ],
-          strokeColor: '#075B5E',
-          strokeWidth: 2,
-          lineDashPattern: [5, 5],
-          key: 'future-pickup-to-dropoff',
-        });
-      } else {
-        // Driver has reached pickup - show pickup to dropoff route
-        const fromPickupRoute = completedRoute.filter(
-          loc =>
-            calculateDistance(loc.lat, loc.lng, pickupLocation.lat, pickupLocation.lng) < 0.05 ||
-            completedRoute.indexOf(loc) >
-              completedRoute.findIndex(l => calculateDistance(l.lat, l.lng, pickupLocation.lat, pickupLocation.lng) < 0.05)
-        );
-      if (fromPickupRoute.length > 1) {
-        polylines.push({
-          coordinates: fromPickupRoute.map(loc => ({ latitude: loc.lat, longitude: loc.lng })),
-          strokeColor: '#4CAF50',
-          strokeWidth: 6,
-          key: 'completed-to-dropoff',
-        });
-      }
-        if (rideStatus === 'in-progress') {
-      polylines.push({
-            coordinates: [
-              { latitude: driverLoc.lat, longitude: driverLoc.lng },
-              { latitude: dropoffLocation.lat, longitude: dropoffLocation.lng },
-            ],
-        strokeColor: '#075B5E',
-        strokeWidth: 4,
-        lineDashPattern: [10, 5],
-        key: 'remaining-to-dropoff',
-      });
-    }
-      }
     }
 
-    console.log('[generateRoutePolylines] Generated polylines:', polylines);
+    // Completed route (green)
+    if (completedRoute.length > 1) {
+      polylines.push({
+        coordinates: completedRoute.map(point => ({ latitude: point.lat, longitude: point.lng })),
+        strokeColor: '#4CAF50',
+        strokeWidth: 6,
+        zIndex: 2,
+        key: 'completed-route',
+      });
+    }
+
     return polylines;
   };
 
@@ -1414,6 +1550,30 @@ const RideTrackerScreen = () => {
           }
         }
       }
+      // In handleStartRide, after setting rideStatus to 'in-progress', send a valid location update immediately
+      if (userRole === 'driver' && driverLocation && isInKathmandu(driverLocation.lat, driverLocation.lng)) {
+        try {
+          await emitWhenConnectedRef.current('updateRideLocation', {
+            latitude: driverLocation.lat,
+            longitude: driverLocation.lng
+          }, 'ride');
+          console.log('[handleStartRide] Sent initial driver location to backend:', driverLocation);
+        } catch (error) {
+          console.error('[handleStartRide] Failed to send initial driver location:', error);
+        }
+      }
+      // --- FIX: Immediately send exact pickup location as first update in test mode ---
+      if (userRole === 'driver' && USE_TEST_DRIVER_LOCATION && pickupLocation) {
+        try {
+          await emitWhenConnectedRef.current('updateRideLocation', {
+            latitude: pickupLocation.lat,
+            longitude: pickupLocation.lng
+          }, 'ride');
+          console.log('[handleStartRide] Sent exact pickup location as first update');
+        } catch (error) {
+          console.error('[handleStartRide] Failed to send pickup location:', error);
+        }
+      }
     } catch (error) {
       console.error('[handleStartRide] Error:', error);
       showToast('Error starting ride', 'error');
@@ -1435,51 +1595,62 @@ const RideTrackerScreen = () => {
       if (rideStatus !== 'in-progress') {
         await handleStartRide();
       }
-      
-      // Ensure progress starts at 0% for simulation
+      // --- NEW: Immediately send simulated (near-pickup) location to backend and reset completed route ---
+      const initialSimLocation = await getTestDriverLocation(pickupLocation);
+      if (initialSimLocation) {
+        setDriverLocation(initialSimLocation);
+        setCompletedRoute([initialSimLocation]);
+        try {
+          await emitWhenConnectedRef.current('updateRideLocation', {
+            latitude: initialSimLocation.lat,
+            longitude: initialSimLocation.lng
+          }, 'ride');
+          console.log('[handleSimulateMovement] Sent initial simulated location update to backend:', initialSimLocation);
+        } catch (error) {
+          console.error('[handleSimulateMovement] Failed to send initial simulated location update:', error);
+        }
+      }
+      // --- END NEW ---
       setProgress(0);
-      progressStartedRef.current = false; // Reset progress tracking for simulation
-      setCompletedRoute([driverLocation]);
+      progressStartedRef.current = false;
       Animated.timing(progressAnimation, {
         toValue: 0,
         duration: 500,
         useNativeDriver: false,
       }).start();
-
       await simulateDriverMovement(
         rideId,
-        driverLocation,
+        initialSimLocation || driverLocation,
         pickupLocation,
         dropoffLocation,
         (location) => {
           setDriverLocation(location);
           setCompletedRoute(prev => {
             const newRoute = [...prev.slice(-100), location];
-            console.log('[handleSimulateMovement] Updated completedRoute:', newRoute);
             return newRoute;
           });
         },
-        // Progress updates are handled by backend via WebSocket
-        () => {
-          console.log('[handleSimulateMovement] Progress will be updated by backend');
+        (progress) => {
+          setProgress(progress);
+          Animated.timing(progressAnimation, {
+            toValue: progress,
+            duration: 500,
+            useNativeDriver: false,
+          }).start();
         },
         setSimulating,
         userRole,
         rideStatusRef,
-        rideStartTime
+        rideStartTime,
+        mainRoutePolyline
       );
-
       if (rideStatusRef.current === 'in-progress') {
-        console.log('[handleSimulateMovement] Completing ride');
-        
-        // Set progress to 100% before completing
         setProgress(100);
         Animated.timing(progressAnimation, {
           toValue: 100,
           duration: 500,
           useNativeDriver: false,
         }).start();
-        
         await emitWhenConnectedRef.current('endRide', { rideId }, 'ride');
         setRideStatus('completed');
         showToast('Ride completed!', 'success');
@@ -1716,8 +1887,148 @@ const RideTrackerScreen = () => {
   };
   const hideModal = () => setModal((prev) => ({ ...prev, visible: false }));
 
+  // --- FETCH ROUTE POLYLINES ---
+  useEffect(() => {
+    const fetchRoute = async () => {
+      if (!pickupLocation || !dropoffLocation) {
+        setMainRoutePolyline([]);
+        return;
+      }
+      setLoadingRoute(true);
+      try {
+        const origin = { lat: pickupLocation.lat, lng: pickupLocation.lng };
+        const destination = { lat: dropoffLocation.lat, lng: dropoffLocation.lng };
+        
+        // Check if both locations are within Kathmandu Valley
+        const inKathmandu = isInKathmandu(origin.lat, origin.lng) && isInKathmandu(destination.lat, destination.lng);
+        if (!inKathmandu) {
+          setMainRoutePolyline([]);
+          setLoadingRoute(false);
+          return;
+        }
+        
+        const route = await locationService.getRouteBetweenPoints(origin, destination);
+        const decodePolyline = (encoded: string): { latitude: number; longitude: number }[] => {
+          let points = [];
+          let index = 0, len = encoded.length;
+          let lat = 0, lng = 0;
+          while (index < len) {
+            let b, shift = 0, result = 0;
+            do {
+              b = encoded.charCodeAt(index++) - 63;
+              result |= (b & 0x1f) << shift;
+              shift += 5;
+            } while (b >= 0x20);
+            let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+            lat += dlat;
+            shift = 0;
+            result = 0;
+            do {
+              b = encoded.charCodeAt(index++) - 63;
+              result |= (b & 0x1f) << shift;
+              shift += 5;
+            } while (b >= 0x20);
+            let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+            lng += dlng;
+            points.push({
+              latitude: lat / 1e5,
+              longitude: lng / 1e5
+            });
+          }
+          return points;
+        };
+        setMainRoutePolyline(decodePolyline(route.polyline));
+      } catch (e) {
+        setMainRoutePolyline([]);
+      }
+      setLoadingRoute(false);
+    };
+    fetchRoute();
+  }, [pickupLocation, dropoffLocation]);
+
   // --- RENDER ---
-    if (!userRole) {
+
+  useEffect(() => {
+    if (pickupLocation && dropoffLocation) {
+      if (!isInKathmandu(pickupLocation.lat, pickupLocation.lng) || !isInKathmandu(dropoffLocation.lat, dropoffLocation.lng)) {
+        setPickupLocation(null);
+        setDropoffLocation(null);
+        setMainRoutePolyline([]);
+        showToast('Please select pickup and dropoff within Kathmandu Valley.', 'error');
+      }
+    }
+  }, [pickupLocation, dropoffLocation]);
+
+  // --- TEST DRIVER LOCATION OVERRIDE ---
+  useEffect(() => {
+    async function maybeSetTestDriverLocation() {
+      try {
+        if (
+          userRole === 'driver' &&
+          USE_TEST_DRIVER_LOCATION &&
+          pickupLocation &&
+          (!driverLocation || calculateDistance(pickupLocation.lat, pickupLocation.lng, driverLocation.lat, driverLocation.lng) > 0.2)
+        ) {
+          const testLoc = await getTestDriverLocation(pickupLocation);
+          if (testLoc) {
+            setDriverLocation(testLoc);
+            setCompletedRoute([testLoc]);
+            // Immediately send simulated location to backend to reset progress and route
+            try {
+              await emitWhenConnectedRef.current('updateRideLocation', {
+                latitude: testLoc.lat,
+                longitude: testLoc.lng
+              }, 'ride');
+              console.log('[TestMode] Sent initial simulated driver location to backend:', testLoc);
+            } catch (err) {
+              console.error('[TestMode] Failed to send initial simulated driver location:', err);
+            }
+            console.log('[TestMode] Overriding driverLocation to test location near pickup:', testLoc);
+          }
+        }
+      } catch (error) {
+        console.error('[TestMode] Error setting test driver location:', error);
+        setErrorMessage('Error setting test driver location');
+        setHasError(true);
+      }
+    }
+    maybeSetTestDriverLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userRole, pickupLocation]);
+
+  // --- ENSURE DIRECT SOCKET HANDLER FOR PASSENGER ---
+  useEffect(() => {
+    if (userRole === 'passenger') {
+      const socket = webSocketService.getSocket('ride');
+      if (socket) {
+        socket.on('rideLocationUpdated', handleRideLocationUpdated);
+        console.log('[Debug] Directly attached handleRideLocationUpdated to socket for passenger');
+        return () => {
+          socket.off('rideLocationUpdated', handleRideLocationUpdated);
+        };
+      }
+    }
+    // No-op cleanup for driver
+    return undefined;
+  }, [userRole, handleRideLocationUpdated]);
+
+  // --- ENSURE 0% PROGRESS AT RIDE ACCEPTANCE ---
+  useEffect(() => {
+    if (userRole === 'driver' && rideStatus === 'accepted' && pickupLocation) {
+      // Send exact pickup location as first update to backend
+      emitWhenConnectedRef.current('updateRideLocation', {
+        latitude: pickupLocation.lat,
+        longitude: pickupLocation.lng
+      }, 'ride').then(() => {
+        console.log('[RideTracker] Sent exact pickup location as first update after ride acceptance');
+      }).catch((error) => {
+        console.error('[RideTracker] Failed to send pickup location after ride acceptance:', error);
+      });
+    }
+    // No-op for passenger
+  }, [rideStatus, userRole, pickupLocation]);
+
+  if (!userRole) {
     console.error('[RideTracker] User role not set');
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -1783,88 +2094,157 @@ const RideTrackerScreen = () => {
   const otherUserRole = userRole === 'driver' ? 'passenger' : 'driver';
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#075B5E" />
-      <View style={styles.mapContainer}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBackButtonPress}>
-          <MaterialIcons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        {userRole === 'driver' && rideStatus === 'in-progress' && !simulating && (
-          <TouchableOpacity style={styles.simulateButton} onPress={handleSimulateMovement}>
-            <MaterialIcons name="play-arrow" size={20} color="#075B5E" />
-            <Text style={styles.simulateButtonText}>Simulate</Text>
+    <ErrorBoundary>
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#075B5E" />
+        <View style={styles.mapContainer}>
+          <TouchableOpacity style={styles.backButton} onPress={handleBackButtonPress}>
+            <MaterialIcons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
-        )}
-        {userRole === 'driver' && simulating && (
-          <View style={styles.simulateButton}>
-            <MaterialIcons name="directions-car" size={20} color="#075B5E" />
-            <Text style={styles.simulateButtonText}>Simulating...</Text>
-          </View>
-        )}
-        <MemoizedMapView
-          style={styles.map}
-          provider={PROVIDER_GOOGLE}
-          initialRegion={{
-            latitude: pickupLocation?.lat || driverLocation?.lat || 26.6587,
-            longitude: pickupLocation?.lng || driverLocation?.lng || 87.3255,
-            latitudeDelta: 0.025,
-            longitudeDelta: 0.025,
-          }}
-          showsUserLocation={false}
-          showsMyLocationButton={false}
-        >
-          {generateRoutePolylines().map(polyline => (
-            <Polyline
-              key={polyline.key}
-              coordinates={polyline.coordinates}
-              strokeColor={polyline.strokeColor}
-              strokeWidth={polyline.strokeWidth}
-              lineDashPattern={polyline.lineDashPattern}
-            />
-          ))}
-          {driverLocation && (
-            <Marker
-              coordinate={{
-                latitude: driverLocation.lat,
-                longitude: driverLocation.lng,
-              }}
-              title="Driver"
-              description={userRole === 'driver' ? 'You' : otherUserName}
-            >
-              <View style={styles.driverMarker}>
-                <MaterialIcons name="directions-car" size={20} color="#FF9800" />
-              </View>
-            </Marker>
+          {userRole === 'driver' && rideStatus === 'in-progress' && !simulating && (
+            <TouchableOpacity style={styles.simulateButton} onPress={handleSimulateMovement}>
+              <MaterialIcons name="play-arrow" size={20} color="#075B5E" />
+              <Text style={styles.simulateButtonText}>Simulate</Text>
+            </TouchableOpacity>
           )}
+          {userRole === 'driver' && simulating && (
+            <View style={styles.simulateButton}>
+              <MaterialIcons name="directions-car" size={20} color="#075B5E" />
+              <Text style={styles.simulateButtonText}>Simulating...</Text>
+            </View>
+          )}
+          
+          <MapView
+            ref={mapRef}
+            provider={PROVIDER_GOOGLE}
+            style={styles.map}
+            initialRegion={{
+              latitude: pickupLocation?.lat || 27.7172,
+              longitude: pickupLocation?.lng || 85.3240,
+              latitudeDelta: 0.0922,
+              longitudeDelta: 0.0421,
+            }}
+            region={
+              driverLocation
+                ? {
+                    latitude: driverLocation.lat,
+                    longitude: driverLocation.lng,
+                    latitudeDelta: 0.0922,
+                    longitudeDelta: 0.0421,
+                  }
+                : undefined
+            }
+            showsUserLocation={true}
+            showsMyLocationButton={false}
+            showsCompass={true}
+            showsScale={true}
+            showsTraffic={false}
+            showsBuildings={true}
+            showsIndoors={true}
+            loadingEnabled={true}
+            loadingIndicatorColor="#075B5E"
+            loadingBackgroundColor="#ffffff"
+          >
+          {/* Pickup Location Marker */}
           {pickupLocation && (
             <Marker
               coordinate={{
                 latitude: pickupLocation.lat,
                 longitude: pickupLocation.lng,
               }}
-              title="Pickup"
-              description={from}
+              title="Pickup Location"
+              description="Pickup point"
+              pinColor="#075B5E"
             >
-              <View style={styles.pickupMarker}>
-                <MaterialIcons name="location-on" size={20} color="#4CAF50" />
+              <View style={{ backgroundColor: '#4CAF50', borderRadius: 20, padding: 8, borderWidth: 2, borderColor: '#fff' }}>
+                <MaterialIcons name="location-on" size={20} color="#fff" />
               </View>
             </Marker>
           )}
+
+          {/* Dropoff Location Marker */}
           {dropoffLocation && (
             <Marker
               coordinate={{
                 latitude: dropoffLocation.lat,
                 longitude: dropoffLocation.lng,
               }}
-              title="Dropoff"
-              description={to}
+              title="Dropoff Location"
+              description="Dropoff point"
+              pinColor="#EA2F14"
             >
-              <View style={styles.dropoffMarker}>
-                <MaterialIcons name="location-on" size={20} color="#EA2F14" />
+              <View style={{ backgroundColor: '#F44336', borderRadius: 20, padding: 8, borderWidth: 2, borderColor: '#fff' }}>
+                <MaterialIcons name="location-on" size={20} color="#fff" />
               </View>
             </Marker>
           )}
-        </MemoizedMapView>
+
+          {/* Driver Location Marker */}
+          {driverLocation && (
+            <Marker
+              coordinate={{
+                latitude: driverLocation.lat,
+                longitude: driverLocation.lng,
+              }}
+              title="Driver Location"
+              description="Current driver position"
+              pinColor="#2196F3"
+            >
+              <Animated.View 
+                style={{ 
+                  backgroundColor: '#2196F3', 
+                  borderRadius: 20, 
+                  padding: 8, 
+                  borderWidth: 2, 
+                  borderColor: '#fff',
+                  transform: [{ scale: pulseAnimation }]
+                }}
+              >
+                <MaterialIcons name="directions-car" size={20} color="#fff" />
+              </Animated.View>
+            </Marker>
+          )}
+
+          {/* Route Polylines */}
+          {mainRoutePolyline.length > 0 && driverLocation && pickupLocation && dropoffLocation ? (
+            <>
+              {/* Completed Route (solid green) */}
+              {completedRoute.length > 1 && (
+                <Polyline
+                  coordinates={completedRoute.map(point => ({ latitude: point.lat, longitude: point.lng }))}
+                  strokeColor="#4CAF50"
+                  strokeWidth={6}
+                  zIndex={2}
+                />
+              )}
+              {/* Driver to Pickup (solid orange) */}
+              {rideStatus !== 'completed' && findClosestPointIndex(mainRoutePolyline, driverLocation) < findClosestPointIndex(mainRoutePolyline, pickupLocation) && (
+                <Polyline
+                  coordinates={mainRoutePolyline.slice(findClosestPointIndex(mainRoutePolyline, driverLocation), findClosestPointIndex(mainRoutePolyline, pickupLocation) + 1)}
+                  strokeColor="#FF9800"
+                  strokeWidth={4}
+                  zIndex={1}
+                />
+              )}
+              {/* Pickup to Dropoff (solid blue) */}
+              {findClosestPointIndex(mainRoutePolyline, pickupLocation) < findClosestPointIndex(mainRoutePolyline, dropoffLocation) && (
+                <Polyline
+                  coordinates={mainRoutePolyline.slice(findClosestPointIndex(mainRoutePolyline, pickupLocation), findClosestPointIndex(mainRoutePolyline, dropoffLocation) + 1)}
+                  strokeColor="#2196F3"
+                  strokeWidth={4}
+                  zIndex={1}
+                />
+              )}
+            </>
+          ) : null}
+        </MapView>
+        
+        {/* Route not available text overlay */}
+        {(!mainRoutePolyline.length || !driverLocation || !pickupLocation || !dropoffLocation) && (
+          <View style={styles.routeNotAvailableOverlay}>
+            <Text style={styles.routeNotAvailableText}>Route not available</Text>
+          </View>
+        )}
       </View>
       <View style={styles.bottomSheet}>
         <View style={styles.progressContainer}>
@@ -2003,6 +2383,7 @@ const RideTrackerScreen = () => {
         onAction={modal.onAction}
       />
     </View>
+    </ErrorBoundary>
   );
 };
 
@@ -2016,8 +2397,9 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   map: {
-    width: width,
-    height: height * 0.6,
+    flex: 1,
+    width: '100%',
+    height: '100%',
   },
   backButton: {
     position: 'absolute',
@@ -2225,6 +2607,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  routeNotAvailableOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  routeNotAvailableText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#F44336',
+    textAlign: 'center',
   },
 });
 
