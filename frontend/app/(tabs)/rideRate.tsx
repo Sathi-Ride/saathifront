@@ -41,6 +41,8 @@ const RideRatingScreen = () => {
   const [feedback, setFeedback] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [showConfetti, setShowConfetti] = useState(true)
+  const [tripDetails, setTripDetails] = useState<any>(null)
+  const [loadingDetails, setLoadingDetails] = useState(false)
   const confettiAnimation = new Animated.Value(0)
 
   useEffect(() => {
@@ -63,34 +65,48 @@ const RideRatingScreen = () => {
     }
   }, [])
 
+  // Fetch trip details if not provided as parameters
+  useEffect(() => {
+    const fetchTripDetails = async () => {
+      if (!rideId || (driverName && from && to && fare && vehicle)) {
+        return; // Already have all details or no rideId
+      }
+
+      setLoadingDetails(true);
+      try {
+        const details = await rideService.getRideDetails(rideId as string);
+        if (details) {
+          setTripDetails(details);
+        }
+      } catch (error) {
+        console.error('[RideRating] Failed to fetch trip details:', error);
+      } finally {
+        setLoadingDetails(false);
+      }
+    };
+
+    fetchTripDetails();
+  }, [rideId, driverName, from, to, fare, vehicle]);
+
   const handleStarPress = (index: number) => {
     setRating(index + 1)
   }
 
   const handleSubmit = async () => {
-    if (!rideId || rating === 0) return
+    if (!rideId || rating === 0) {
+      alert('Please select a rating before submitting.');
+      return;
+    }
+    
     setSubmitting(true)
     try {
-      // Use WebSocket for rating if connected, otherwise fallback to REST
-      let success = false
+      console.log('[RideRating] Submitting driver rating:', { rideId, rating, feedback });
       
-      if (webSocketService.isSocketConnected()) {
-        // Use WebSocket for rating
-        success = await new Promise((resolve) => {
-          webSocketService.emitEvent('rateRide', {
-            rideId,
-            rating,
-            comment: feedback
-          }, (response: any) => {
-            resolve(response && response.code === 200)
-          })
-        })
-      } else {
-        // Fallback to REST API
-        success = await rideService.rateDriver(rideId as string, rating)
-      }
+      // Use REST API for rating (as per backend endpoint)
+      const success = await rideService.rateDriver(rideId as string, rating);
       
       if (success) {
+        console.log('[RideRating] Driver rating submitted successfully');
         // Show success animation
         setShowConfetti(true)
         Animated.sequence([
@@ -106,14 +122,25 @@ const RideRatingScreen = () => {
           }),
         ]).start(() => {
           setTimeout(() => {
-        router.push('/(tabs)')
+            router.push('/(tabs)')
           }, 1000)
         })
       } else {
+        console.error('[RideRating] Failed to submit driver rating');
         alert('Failed to submit rating. Please try again.')
       }
-    } catch (err) {
-      alert('Error submitting rating. Please try again.')
+    } catch (err: any) {
+      console.error('[RideRating] Error submitting driver rating:', err);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Error submitting rating. Please try again.';
+      if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      alert(errorMessage);
     } finally {
       setSubmitting(false)
     }
@@ -183,33 +210,47 @@ const RideRatingScreen = () => {
             <Text style={styles.tripCompleteText}>Trip Completed!</Text>
           </View>
 
+          {loadingDetails ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.loadingText}>Loading trip details...</Text>
+            </View>
+          ) : (
           <View style={styles.tripDetails}>
             <View style={styles.tripRow}>
               <Icon name="person" size={20} color="#075B5E" />
               <Text style={styles.tripLabel}>Driver:</Text>
-              <Text style={styles.tripValue}>{driverName}</Text>
+              <Text style={styles.tripValue}>
+                {driverName || (tripDetails?.driver?.firstName && tripDetails?.driver?.lastName 
+                  ? `${tripDetails.driver.firstName} ${tripDetails.driver.lastName}`
+                  : tripDetails?.driver?.firstName || 'Driver')}
+              </Text>
             </View>
             <View style={styles.tripRow}>
               <Icon name="directions-car" size={20} color="#075B5E" />
               <Text style={styles.tripLabel}>Vehicle:</Text>
-              <Text style={styles.tripValue}>{vehicle}</Text>
+              <Text style={styles.tripValue}>{vehicle || tripDetails?.vehicle || 'Vehicle'}</Text>
             </View>
             <View style={styles.tripRow}>
               <Icon name="payment" size={20} color="#075B5E" />
               <Text style={styles.tripLabel}>Fare:</Text>
-              <Text style={styles.tripValue}>₹{fare}</Text>
+              <Text style={styles.tripValue}>₹{fare || tripDetails?.fare || '0'}</Text>
             </View>
             <View style={styles.tripRow}>
               <Icon name="location-on" size={20} color="#075B5E" />
               <Text style={styles.tripLabel}>From:</Text>
-              <Text style={styles.tripValue} numberOfLines={1}>{from}</Text>
+              <Text style={styles.tripValue} numberOfLines={1}>
+                {from || (tripDetails?.pickUp?.address || 'Pickup Location')}
+              </Text>
             </View>
             <View style={styles.tripRow}>
               <Icon name="location-on" size={20} color="#EA2F14" />
               <Text style={styles.tripLabel}>To:</Text>
-              <Text style={styles.tripValue} numberOfLines={1}>{to}</Text>
+              <Text style={styles.tripValue} numberOfLines={1}>
+                {to || (tripDetails?.dropOff?.address || 'Dropoff Location')}
+              </Text>
             </View>
           </View>
+          )}
         </View>
 
         {/* Rating Section */}
@@ -228,10 +269,10 @@ const RideRatingScreen = () => {
 
         {/* Feedback Section */}
         <View style={styles.feedbackCard}>
-          <Text style={styles.feedbackTitle}>Share your feedback</Text>
+          <Text style={styles.feedbackTitle}>Share your feedback (Optional)</Text>
           <TextInput
             style={styles.feedbackInput}
-            placeholder="Tell us about your experience..."
+            placeholder="Tell us about your ride experience..."
             placeholderTextColor="#999"
             value={feedback}
             onChangeText={setFeedback}
@@ -281,11 +322,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     marginTop: 30,
-    color: "#000",
   },
   backButton: {
     padding: 8,
-    color: "#075B5E",
   },
   headerTitle: {
     fontSize: 20,
@@ -448,6 +487,15 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
+  },
+  loadingContainer: {
+    alignItems: "center",
+    paddingVertical: 20,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: "#666",
+    fontStyle: "italic",
   },
 })
 

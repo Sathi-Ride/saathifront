@@ -418,6 +418,7 @@ const RideTrackerScreen = () => {
   const [dropoffLocation, setDropoffLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [rideDetails, setRideDetails] = useState<Ride | null>(null);
   const [loading, setLoading] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [simulating, setSimulating] = useState(false);
   const [completedRoute, setCompletedRoute] = useState<{ lat: number; lng: number }[]>([]);
   const [toast, setToast] = useState<{
@@ -511,6 +512,8 @@ const RideTrackerScreen = () => {
   useEffect(() => {
     console.log('[RideTracker] Initializing rideId:', rideId, 'userRole:', userRole, 'rideStatus:', rideStatus);
   }, [rideId, userRole, rideStatus]);
+
+
 
   // --- COMPONENT FOCUS STATE ---
   const [isComponentActive, setIsComponentActive] = useState(true);
@@ -653,7 +656,6 @@ const RideTrackerScreen = () => {
     const checkWebSocketConnection = async () => {
       // EARLY EXIT: Don't attempt reconnection for cancelled rides or searching rides
       if (rideStatus === 'cancelled' || rideCancelled || rideStatus === 'searching') {
-        console.log('[RideTracker] Ride is cancelled or searching, skipping WebSocket reconnection attempts');
         return;
       }
       
@@ -661,7 +663,6 @@ const RideTrackerScreen = () => {
       setIsWebSocketConnected(isConnected);
       
       if (!isConnected && isComponentActive && reconnectAttempts < maxReconnectAttempts) {
-        console.log(`[RideTracker] WebSocket disconnected, attempting to reconnect (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
         reconnectAttempts++;
         
         try {
@@ -671,10 +672,8 @@ const RideTrackerScreen = () => {
           
           // Try to reconnect
           await ensureSocketConnected(rideId, 'ride');
-          console.log('[RideTracker] WebSocket reconnected successfully');
           reconnectAttempts = 0; // Reset attempts on success
         } catch (error) {
-          console.log('[RideTracker] Failed to reconnect WebSocket:', error);
           // Wait longer between attempts
           await new Promise(resolve => setTimeout(resolve, 2000 * reconnectAttempts));
         }
@@ -698,31 +697,26 @@ const RideTrackerScreen = () => {
   // --- FOCUS LISTENER ---
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', async () => {
-      console.log('[RideTracker] Component focused');
       setIsComponentActive(true);
       
       // EARLY EXIT: Don't attempt reconnection for cancelled rides
       if (rideStatus === 'cancelled' || rideCancelled) {
-        console.log('[RideTracker] Ride is cancelled, skipping WebSocket reconnection on focus');
         return;
       }
       
       // Immediately check and reconnect WebSocket when component becomes focused
       setTimeout(async () => {
         if (!webSocketService.isSocketConnected('ride')) {
-          console.log('[RideTracker] WebSocket not connected on focus, attempting immediate reconnection');
           try {
             await ensureSocketConnected(rideId, 'ride');
-            console.log('[RideTracker] Immediate reconnection successful');
           } catch (error) {
-            console.log('[RideTracker] Immediate reconnection failed:', error);
+            // Silent fail
           }
         }
       }, 500); // Small delay to ensure state is updated
     });
 
     const blurUnsubscribe = navigation.addListener('blur', () => {
-      console.log('[RideTracker] Component blurred');
       setIsComponentActive(false);
     });
 
@@ -736,10 +730,8 @@ const RideTrackerScreen = () => {
   const updateDriverLocation = useCallback(
     throttle(
     async (location: { lat: number; lng: number }) => {
-        console.log('[updateDriverLocation] Called with userRole:', userRole, 'location:', location);
         // Only allow drivers to update ride location
         if (userRole !== 'driver') {
-          console.log('[updateDriverLocation] Blocked - user is not driver');
           return; // Silent return for passengers
         }
         
@@ -750,65 +742,52 @@ const RideTrackerScreen = () => {
         
         // Check if ride namespace is connected before attempting to emit ride location updates
         if (!webSocketService.isSocketConnected('ride')) {
-          console.log('[updateDriverLocation] Ride namespace not connected, skipping location update');
           return; // Silent return if ride namespace not connected
         }
         
         // Check if component is active (user is on this screen)
         if (!isComponentActive) {
-          console.log('[updateDriverLocation] Component not active, skipping location update');
           return; // Silent return if component is not active
         }
         
         // Check if WebSocket is connected
         if (!isWebSocketConnected) {
-          console.log('[updateDriverLocation] WebSocket not connected, skipping location update');
           return; // Silent return if WebSocket is not connected
         }
         
         if (simulating) {
-          console.log('[updateDriverLocation] Skipping real location update: simulation in progress');
           return;
         }
         if (!pickupLocationRef.current || !dropoffLocationRef.current) {
-          console.log('[updateDriverLocation] Missing pickup or dropoff location');
           return;
         }
         if (rideStatusRef.current === 'cancelled') {
-          console.log('[updateDriverLocation] Ride is cancelled, skipping update');
           return;
         }
         if (rideStatusRef.current !== 'in-progress' || !rideStartedConfirmedRef.current) {
-          console.log('[updateDriverLocation] Ride not in-progress or not confirmed, skipping update');
           return;
         }
 
         try {
-          console.log('[updateDriverLocation] Updating location:', location);
         setDriverLocation(location);
           setCompletedRoute(prev => {
             const newRoute = [...prev.slice(-100), location];
-            console.log('[updateDriverLocation] Updated completedRoute:', newRoute);
             return newRoute;
           });
 
           // Backend will calculate progress automatically
-          console.log('[updateDriverLocation] Location updated, backend will calculate progress');
 
           // Only send location updates if user is driver and ride is in progress
           if (userRole === 'driver' && rideStatusRef.current === 'in-progress' && rideStartedConfirmedRef.current && !simulating) {
             const now = Date.now();
             if (now - lastLocationUpdateRef.current < 3000) { // Increased throttle to 3 seconds
-              console.log('[updateDriverLocation] Throttling location update');
               return;
             }
             lastLocationUpdateRef.current = now;
             
             // Backend handles progress calculation including initial movement detection
-            console.log('[updateDriverLocation] Backend will handle progress calculation');
             
             const payload = { latitude: location.lat, longitude: location.lng };
-            console.log('[updateDriverLocation] Emitting updateRideLocation:', payload);
             
             try {
               await emitWhenConnectedRef.current('updateRideLocation', payload, 'ride');
@@ -834,10 +813,8 @@ const RideTrackerScreen = () => {
               );
               
               if (isExpectedError || errorMessage?.includes('400')) {
-                console.log('[updateDriverLocation] Suppressed expected error for location update:', errorMessage);
                 // Only attempt reconnection for non-expected errors or if it's a token issue
                 if (error.message?.includes('token') || error.message?.includes('unauthorized')) {
-                  console.log('[updateDriverLocation] Attempting to refresh token and reconnect');
                   try {
                     await webSocketService.reconnectAllWithNewToken();
                     // Retry the location update once after reconnection
@@ -879,10 +856,17 @@ const RideTrackerScreen = () => {
               setRideStatus('completed');
               setRideStartTime(null);
               showToast('Ride completed!', 'success');
-              setTimeout(() => router.push('/(driver)'), 2000);
+              setTimeout(() => {
+                if (isMounted.current) {
+                  const role = userRole as string;
+                  if (role === 'passenger') {
+                    router.push('/(tabs)/rideRate');
+                  } else {
+                    router.push('/(driver)');
+                  }
+                }
+              }, 2000);
             }
-        } else {
-            console.log('[updateDriverLocation] Not sending location update - userRole:', userRole, 'rideStatus:', rideStatusRef.current, 'rideStartedConfirmed:', rideStartedConfirmedRef.current);
         }
       } catch (error) {
           console.error('[updateDriverLocation] Error:', error);
@@ -912,53 +896,10 @@ const RideTrackerScreen = () => {
           return; // Silent return for drivers
         }
         
-        // CRITICAL: Passengers should NOT send location updates during rides
-        // This was causing 400 errors because passengers were trying to update ride location
         console.log('[updatePassengerLocation] PASSENGER LOCATION UPDATES DISABLED DURING RIDES');
         return; // Silent return - passengers don't send location updates during rides
         
-        // The code below is commented out to prevent passenger location update errors
-        /*
-        // Additional safety check - ensure this is really a passenger
-        if (!webSocketService.isSocketConnected('passenger')) {
-          return; // Silent return if passenger socket not connected
-        }
-        
-        try {
-          console.log('[updatePassengerLocation] Updating passenger location:', location);
-          
-          // Send passenger location update to passenger namespace
-          const payload = { latitude: location.lat, longitude: location.lng };
-          console.log('[updatePassengerLocation] Emitting pingStatus to passenger namespace:', payload);
-          
-          try {
-            await emitWhenConnectedRef.current('pingStatus', payload, 'passenger');
-            console.log('[updatePassengerLocation] Passenger location updated successfully');
-          } catch (error: any) {
-            console.error('[updatePassengerLocation] WebSocket error:', error);
-            // If it's a 400 error, it might be due to expired token
-            if (error.message?.includes('400') || error.message?.includes('Failed to update location')) {
-              console.log('[updatePassengerLocation] Attempting to refresh token and reconnect');
-              try {
-                await webSocketService.reconnectAllWithNewToken();
-                // Retry the location update once after reconnection
-                setTimeout(async () => {
-                  try {
-                    await emitWhenConnectedRef.current('pingStatus', payload, 'passenger');
-                  } catch (retryError) {
-                    console.error('[updatePassengerLocation] Retry failed:', retryError);
-                  }
-                }, 1000);
-              } catch (reconnectError) {
-                console.error('[updatePassengerLocation] Reconnection failed:', reconnectError);
-              }
-            }
-          }
-        } catch (error) {
-          console.error('[updatePassengerLocation] Error:', error);
-          // Don't show toast for passenger location updates to avoid spam
-        }
-        */
+
       },
       10000, // Throttle to 10 seconds for passengers (less frequent than drivers)
       { leading: false }
@@ -1394,15 +1335,15 @@ const RideTrackerScreen = () => {
         showToast('Ride has been cancelled', 'info');
         
         // Navigate back to appropriate screen after a short delay
-        setTimeout(() => {
-          if (isMounted.current) {
-            if (userRole === 'passenger') {
+          setTimeout(() => {
+            if (isMounted.current) {
+              if (userRole === 'passenger') {
               router.push('/(tabs)');
-            } else {
-              router.push('/(driver)');
+              } else {
+                router.push('/(driver)');
+              }
             }
-          }
-        }, 2000);
+          }, 2000);
       }
     };
 
@@ -1475,8 +1416,21 @@ const RideTrackerScreen = () => {
         showToast('Ride completed!', 'success');
         setTimeout(() => {
           if (isMounted.current) {
-            if (userRole === 'passenger') {
-              router.push('/(tabs)');
+            const role = userRole as string;
+            if (role === 'passenger') {
+              router.push({
+                pathname: '/(tabs)/rideRate',
+                params: {
+                  rideId,
+                  driverName: rideDetails?.driver?.firstName && rideDetails?.driver?.lastName 
+                    ? `${rideDetails.driver.firstName} ${rideDetails.driver.lastName}`
+                    : (rideDetails?.driver?.firstName || 'Driver'),
+                  from: from || ((rideDetails as any)?.pickUpLocation || 'Pickup Location'),
+                  to: to || ((rideDetails as any)?.dropOffLocation || 'Dropoff Location'),
+                  fare: fare || ((rideDetails as any)?.offerPrice?.toString() || '0'),
+                  vehicle: vehicle || ((rideDetails as any)?.vehicleType?.name || 'Vehicle')
+                }
+              });
             } else {
               router.push('/(driver)');
             }
@@ -1752,7 +1706,28 @@ const RideTrackerScreen = () => {
         await emitWhenConnectedRef.current('endRide', { rideId }, 'ride');
         setRideStatus('completed');
         showToast('Ride completed!', 'success');
-        setTimeout(() => router.push('/(driver)'), 2000);
+        setTimeout(() => {
+          if (isMounted.current) {
+            const role = userRole as string;
+            if (role === 'passenger') {
+              router.push({
+                pathname: '/(tabs)/rideRate',
+                params: {
+                  rideId,
+                  driverName: rideDetails?.driver?.firstName && rideDetails?.driver?.lastName 
+                    ? `${rideDetails.driver.firstName} ${rideDetails.driver.lastName}`
+                    : (rideDetails?.driver?.firstName || 'Driver'),
+                  from: from || ((rideDetails as any)?.pickUpLocation || 'Pickup Location'),
+                  to: to || ((rideDetails as any)?.dropOffLocation || 'Dropoff Location'),
+                  fare: fare || ((rideDetails as any)?.offerPrice?.toString() || '0'),
+                  vehicle: vehicle || ((rideDetails as any)?.vehicleType?.name || 'Vehicle')
+                }
+              });
+            } else {
+              router.push('/(driver)');
+            }
+          }
+        }, 2000);
       }
     } catch (error) {
       console.error('[handleSimulateMovement] Error:', error);
@@ -1811,7 +1786,7 @@ const RideTrackerScreen = () => {
       return;
     }
     
-    setLoading(true);
+    setCancelling(true);
     try {
       console.log('[handleConfirmCancelRide] Cancelling ride, rideId:', rideId, 'reason:', cancellationReason);
       
@@ -1824,7 +1799,7 @@ const RideTrackerScreen = () => {
           showToast('Ride is already cancelled', 'info');
           setIsCancellationModalVisible(false);
           setCancellationReason('');
-          setLoading(false);
+          setCancelling(false);
           
           // Clean up and redirect
           setTimeout(() => {
@@ -1887,7 +1862,7 @@ const RideTrackerScreen = () => {
         showToast('Error cancelling ride', 'error');
       }
     } finally {
-      setLoading(false);
+      setCancelling(false);
       setIsCancellationModalVisible(false);
       setCancellationReason('');
     }
@@ -2360,11 +2335,11 @@ const RideTrackerScreen = () => {
         <View style={styles.detailsContainer}>
           <View style={styles.detailRow}>
             <View style={styles.detailItem}>
-              <MaterialIcons name="location-on" size={20} color="#075B5E" />
+              <MaterialIcons name="location-on" size={20} color="#4CAF50" />
               <Text style={styles.detailText}>From: {from}</Text>
             </View>
             <View style={styles.detailItem}>
-              <MaterialIcons name="location-searching" size={20} color="#075B5E" />
+              <MaterialIcons name="location-on" size={20} color="#F44336" />
               <Text style={styles.detailText}>To: {to}</Text>
             </View>
           </View>
@@ -2376,7 +2351,7 @@ const RideTrackerScreen = () => {
               </Text>
             </View>
             <View style={styles.detailItem}>
-              <MaterialIcons name="attach-money" size={20} color="#075B5E" />
+              <MaterialIcons name="currency-rupee" size={20} color="#d6ab1e" />
               <Text style={styles.detailText}>Fare: {fare}</Text>
             </View>
           </View>
@@ -2404,10 +2379,12 @@ const RideTrackerScreen = () => {
           <TouchableOpacity
             style={[styles.button, { backgroundColor: '#F44336' }]}
             onPress={handleCancelRide}
-            disabled={loading}
+            disabled={cancelling}
           >
             <Text style={styles.buttonText}>Cancel Ride</Text>
           </TouchableOpacity>
+          
+
           <View style={styles.contactButtons}>
             <TouchableOpacity
               style={[styles.contactButton, { backgroundColor: '#4CAF50' }]}
@@ -2428,8 +2405,9 @@ const RideTrackerScreen = () => {
         </View>
       <Toast visible={toast.visible} message={toast.message} type={toast.type} onHide={hideToast} />
 
+      {isCancellationModalVisible && (
       <Modal
-        visible={isCancellationModalVisible}
+          visible={true}
         animationType="fade"
         transparent={true}
         onRequestClose={() => setIsCancellationModalVisible(false)}
@@ -2449,8 +2427,8 @@ const RideTrackerScreen = () => {
               <TouchableOpacity style={{ paddingVertical: 8, paddingHorizontal: 16, borderRadius: 6, backgroundColor: 'transparent', marginRight: 2 }} onPress={() => { setIsCancellationModalVisible(false); setCancellationReason(''); }}>
                 <Text style={{ color: '#888', fontSize: 15, fontWeight: '600' }}>Back</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={{ paddingVertical: 8, paddingHorizontal: 18, borderRadius: 6, backgroundColor: '#EF4444' }} onPress={handleConfirmCancelRide} disabled={loading}>
-                {loading ? (
+                              <TouchableOpacity style={{ paddingVertical: 8, paddingHorizontal: 18, borderRadius: 6, backgroundColor: '#EF4444' }} onPress={handleConfirmCancelRide} disabled={cancelling}>
+                {cancelling ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
                   <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Confirm Cancel</Text>
@@ -2460,6 +2438,7 @@ const RideTrackerScreen = () => {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* Back Confirmation Modal */}
       <ConfirmationModal
