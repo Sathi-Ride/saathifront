@@ -15,7 +15,7 @@ import {
   Modal,
 } from 'react-native';
 import * as Location from 'expo-location';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useNavigation } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import Toast from '../../components/ui/Toast';
 import ConfirmationModal from '../../components/ui/ConfirmationModal';
@@ -396,6 +396,7 @@ const RideTrackerScreen = () => {
   // --- PARAMS & ROUTER ---
   const params = useLocalSearchParams();
   const router = useRouter();
+  const navigation = useNavigation();
   const rideId = params.rideId as string;
   const userRole = useUserRole();
   const driverName = params.driverName as string;
@@ -511,6 +512,25 @@ const RideTrackerScreen = () => {
     console.log('[RideTracker] Initializing rideId:', rideId, 'userRole:', userRole, 'rideStatus:', rideStatus);
   }, [rideId, userRole, rideStatus]);
 
+  // --- COMPONENT FOCUS STATE ---
+  const [isComponentActive, setIsComponentActive] = useState(true);
+  const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
+
+  // --- CLEANUP ON UNMOUNT ---
+  useEffect(() => {
+    return () => {
+      console.log('[RideTracker] Component unmounting, cleaning up WebSocket connections');
+      // Clean up WebSocket connections when component unmounts
+      webSocketService.disconnect('ride');
+      webSocketService.disconnect('driver');
+      webSocketService.disconnect('passenger');
+    };
+  }, []);
+
+
+
+
+
   // --- WEBSOCKET CONNECTION ---
   const ensureSocketConnected = useCallback(async (rideId: string, namespace: 'passenger' | 'driver' | 'ride') => {
     try {
@@ -570,6 +590,12 @@ const RideTrackerScreen = () => {
             throw new Error('Ride is no longer active');
           }
           
+          // Double-check that socket is actually connected before emitting
+          if (!webSocketService.isSocketConnected(namespace)) {
+            console.log(`[emitWhenConnected] Socket not connected to ${namespace} namespace after ensureSocketConnected, retrying...`);
+            throw new Error(`Socket not connected to ${namespace} namespace`);
+          }
+          
           return await new Promise((resolve, reject) => {
             webSocketService.emitEvent(event, data, (response: any) => {
               console.log(`[emitWhenConnected] ${event} response in ${namespace} namespace:`, response);
@@ -591,6 +617,18 @@ const RideTrackerScreen = () => {
             throw error;
           }
           
+          // If socket is not connected, try to reconnect
+          if (error.message?.includes('socket not connected') || error.message?.includes('Socket not connected')) {
+            console.log(`[emitWhenConnected] Socket not connected, attempting to reconnect to ${namespace} namespace`);
+            try {
+              // Force disconnect and reconnect
+              webSocketService.disconnect(namespace);
+              await new Promise(res => setTimeout(res, 1000)); // Wait a bit before reconnecting
+            } catch (reconnectError) {
+              console.error(`[emitWhenConnected] Failed to reconnect to ${namespace} namespace:`, reconnectError);
+            }
+          }
+          
           if (attempt >= maxRetries) {
             showToast(`Failed to emit ${event} after ${maxRetries} attempts`, 'error');
             throw error;
@@ -607,6 +645,81 @@ const RideTrackerScreen = () => {
     emitWhenConnectedRef.current = emitWhenConnected;
   }, [emitWhenConnected]);
 
+  // --- WEBSOCKET CONNECTION STATUS CHECKER ---
+  useEffect(() => {
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+
+    const checkWebSocketConnection = async () => {
+      const isConnected = webSocketService.isSocketConnected('ride');
+      setIsWebSocketConnected(isConnected);
+      
+      if (!isConnected && isComponentActive && reconnectAttempts < maxReconnectAttempts) {
+        console.log(`[RideTracker] WebSocket disconnected, attempting to reconnect (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+        reconnectAttempts++;
+        
+        try {
+          // Force disconnect first to ensure clean state
+          webSocketService.disconnect('ride');
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+          
+          // Try to reconnect
+          await ensureSocketConnected(rideId, 'ride');
+          console.log('[RideTracker] WebSocket reconnected successfully');
+          reconnectAttempts = 0; // Reset attempts on success
+        } catch (error) {
+          console.log('[RideTracker] Failed to reconnect WebSocket:', error);
+          // Wait longer between attempts
+          await new Promise(resolve => setTimeout(resolve, 2000 * reconnectAttempts));
+        }
+      } else if (isConnected) {
+        reconnectAttempts = 0; // Reset attempts when connected
+      }
+    };
+
+    // Check connection status every 3 seconds
+    const interval = setInterval(checkWebSocketConnection, 3000);
+    
+    // Initial check
+    checkWebSocketConnection();
+
+    return () => {
+      clearInterval(interval);
+      reconnectAttempts = 0;
+    };
+  }, [isComponentActive, rideId, ensureSocketConnected]);
+
+  // --- FOCUS LISTENER ---
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', async () => {
+      console.log('[RideTracker] Component focused');
+      setIsComponentActive(true);
+      
+      // Immediately check and reconnect WebSocket when component becomes focused
+      setTimeout(async () => {
+        if (!webSocketService.isSocketConnected('ride')) {
+          console.log('[RideTracker] WebSocket not connected on focus, attempting immediate reconnection');
+          try {
+            await ensureSocketConnected(rideId, 'ride');
+            console.log('[RideTracker] Immediate reconnection successful');
+          } catch (error) {
+            console.log('[RideTracker] Immediate reconnection failed:', error);
+          }
+        }
+      }, 500); // Small delay to ensure state is updated
+    });
+
+    const blurUnsubscribe = navigation.addListener('blur', () => {
+      console.log('[RideTracker] Component blurred');
+      setIsComponentActive(false);
+    });
+
+    return () => {
+      unsubscribe();
+      blurUnsubscribe();
+    };
+  }, [navigation, rideId, ensureSocketConnected]);
+
   // --- UPDATE DRIVER LOCATION ---
   const updateDriverLocation = useCallback(
     throttle(
@@ -621,6 +734,24 @@ const RideTrackerScreen = () => {
         // Additional safety check - ensure this is really a driver
         if (!webSocketService.isSocketConnected('driver')) {
           return; // Silent return if driver socket not connected
+        }
+        
+        // Check if ride namespace is connected before attempting to emit ride location updates
+        if (!webSocketService.isSocketConnected('ride')) {
+          console.log('[updateDriverLocation] Ride namespace not connected, skipping location update');
+          return; // Silent return if ride namespace not connected
+        }
+        
+        // Check if component is active (user is on this screen)
+        if (!isComponentActive) {
+          console.log('[updateDriverLocation] Component not active, skipping location update');
+          return; // Silent return if component is not active
+        }
+        
+        // Check if WebSocket is connected
+        if (!isWebSocketConnected) {
+          console.log('[updateDriverLocation] WebSocket not connected, skipping location update');
+          return; // Silent return if WebSocket is not connected
         }
         
         if (simulating) {
@@ -1665,35 +1796,6 @@ const RideTrackerScreen = () => {
     }
   };
 
-  const handleCompleteRide = async () => {
-    if (userRole !== 'driver') {
-      console.log('[handleCompleteRide] Not driver, skipping');
-      return;
-    }
-    showModal('info', 'Complete Ride', 'Are you sure you want to complete this ride?', 'Complete', async () => {
-      hideModal();
-      setLoading(true);
-      try {
-        console.log('[handleCompleteRide] Completing ride, rideId:', rideId);
-        setProgress(100);
-        Animated.timing(progressAnimation, {
-          toValue: 100,
-          duration: 500,
-          useNativeDriver: false,
-        }).start();
-        await emitWhenConnectedRef.current('endRide', { rideId }, 'ride');
-        setRideStatus('completed');
-        setRideStartTime(null);
-        showToast('Ride completed!', 'success');
-        setTimeout(() => router.push('/(driver)'), 2000);
-      } catch (error) {
-        console.error('[handleCompleteRide] Error:', error);
-        showToast('Error completing ride', 'error');
-      } finally {
-        setLoading(false);
-      }
-    });
-  };
 
   const handleBackButtonPress = () => {
     // Show confirmation modal if ride is in progress or accepted
@@ -2269,14 +2371,35 @@ const RideTrackerScreen = () => {
           <Text style={styles.progressText}>{Math.round(progress)}%</Text>
         </View>
         <View style={styles.detailsContainer}>
-          <Text style={styles.detailText}>From: {from}</Text>
-          <Text style={styles.detailText}>To: {to}</Text>
-          <Text style={styles.detailText}>
-            {otherUserRole.charAt(0).toUpperCase() + otherUserRole.slice(1)}: {otherUserName}
-          </Text>
-          <Text style={styles.detailText}>Fare: {fare}</Text>
-          <Text style={styles.detailText}>Vehicle: {vehicle}</Text>
+          <View style={styles.detailRow}>
+            <View style={styles.detailItem}>
+              <MaterialIcons name="location-on" size={20} color="#075B5E" />
+              <Text style={styles.detailText}>From: {from}</Text>
             </View>
+            <View style={styles.detailItem}>
+              <MaterialIcons name="location-searching" size={20} color="#075B5E" />
+              <Text style={styles.detailText}>To: {to}</Text>
+            </View>
+          </View>
+          <View style={styles.detailRow}>
+            <View style={styles.detailItem}>
+              <MaterialIcons name="person" size={20} color="#075B5E" />
+              <Text style={styles.detailText}>
+                {otherUserRole.charAt(0).toUpperCase() + otherUserRole.slice(1)}: {otherUserName}
+              </Text>
+            </View>
+            <View style={styles.detailItem}>
+              <MaterialIcons name="attach-money" size={20} color="#075B5E" />
+              <Text style={styles.detailText}>Fare: {fare}</Text>
+            </View>
+          </View>
+          <View style={styles.detailRow}>
+            <View style={styles.detailItem}>
+              <MaterialIcons name="directions-car" size={20} color="#075B5E" />
+              <Text style={styles.detailText}>Vehicle: {vehicle}</Text>
+            </View>
+          </View>
+        </View>
         <View style={styles.buttonContainer}>
           {userRole === 'driver' && rideStatus === 'accepted' && (
           <TouchableOpacity
@@ -2288,19 +2411,6 @@ const RideTrackerScreen = () => {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.buttonText}>Start Ride</Text>
-              )}
-          </TouchableOpacity>
-        )}
-          {rideStatus === 'in-progress' && (
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: '#2196F3' }]}
-              onPress={handleCompleteRide}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>Complete Ride</Text>
               )}
           </TouchableOpacity>
         )}
@@ -2316,15 +2426,17 @@ const RideTrackerScreen = () => {
               style={[styles.contactButton, { backgroundColor: '#4CAF50' }]}
               onPress={handleCallOtherUser}
             >
-              <MaterialIcons name="phone" size={20} color="#fff" />
-          </TouchableOpacity>
+              <MaterialIcons name="phone" size={18} color="#fff" />
+              <Text style={styles.contactButtonText}>Call</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.contactButton, { backgroundColor: '#2196F3' }]}
               onPress={handleMessageOtherUser}
             >
-              <MaterialIcons name="message" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
+              <MaterialIcons name="message" size={18} color="#fff" />
+              <Text style={styles.contactButtonText}>Message</Text>
+            </TouchableOpacity>
+          </View>
           </View>
         </View>
       <Toast visible={toast.visible} message={toast.message} type={toast.type} onHide={hideToast} />
@@ -2478,10 +2590,22 @@ const styles = StyleSheet.create({
   detailsContainer: {
     marginBottom: 20,
   },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  detailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
+  },
   detailText: {
     fontSize: 16,
     color: '#333',
-    marginBottom: 8,
+    marginLeft: 8,
+    flex: 1,
   },
   buttonContainer: {
     flexDirection: 'column',
@@ -2502,14 +2626,23 @@ const styles = StyleSheet.create({
   contactButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    width: '60%',
+    width: '100%',
+    marginTop: 10,
   },
   contactButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    flex: 1,
+    height: 44,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    marginHorizontal: 5,
+  },
+  contactButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
   },
   driverMarker: {
     backgroundColor: '#fff',

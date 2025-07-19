@@ -401,6 +401,9 @@ class WebSocketService {
         // Ensure data has required fields
         if (!data || typeof data.latitude !== 'number' || typeof data.longitude !== 'number') {
           console.error(`[websocketService] Invalid updateRideLocation data:`, data);
+          if (callback) {
+            callback({ code: 400, message: 'Invalid location data' });
+          }
           return;
         }
       } else if (event === 'pingStatus') {
@@ -416,6 +419,10 @@ class WebSocketService {
       }
     } else {
       console.error(`WebSocket: Cannot emit event to ${namespace} namespace, socket not connected`);
+      // Call callback with error if provided, so the calling code can handle the disconnection
+      if (callback) {
+        callback({ code: 500, message: `Cannot emit event to ${namespace} namespace, socket not connected` });
+      }
     }
   }
 

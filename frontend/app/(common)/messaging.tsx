@@ -83,8 +83,18 @@ const MessagingScreen = () => {
 
     async function connectSocket() {
       try {
-        console.log('Connecting to ride WebSocket for rideId:', rideId);
-        await webSocketService.connect(rideId, 'ride');
+        console.log('Messaging: Checking ride WebSocket connection for rideId:', rideId);
+        
+        // Check if already connected to the same ride
+        const existingSocket = webSocketService.getSocket('ride');
+        if (existingSocket && existingSocket.connected) {
+          console.log('Messaging: WebSocket already connected, using existing connection');
+          setIsConnected(true);
+        } else {
+          console.log('Messaging: Connecting to ride WebSocket for rideId:', rideId);
+          await webSocketService.connect(rideId, 'ride');
+        }
+        
         const socket = webSocketService.getSocket('ride');
         
         if (!socket) {
@@ -169,8 +179,9 @@ const MessagingScreen = () => {
 
     return () => {
       isMounted = false;
-      console.log('Cleaning up WebSocket connection');
-      webSocketService.disconnect('ride');
+      console.log('Messaging screen unmounting - NOT disconnecting WebSocket (ride tracker needs it)');
+      // Don't disconnect the WebSocket here since the ride tracker needs to maintain the connection
+      // The ride tracker will handle the WebSocket lifecycle
     };
   }, [rideId, userId]);
 
