@@ -327,7 +327,6 @@ class WebSocketService {
           'Message ID is required',
           'Ride offer ID is required',
           'Can only reject submitted offers',
-          'Ride is not in searching status',
           'Ride offer is not in submitted status',
           'Ride is not in cancelable status',
           'Ride is not in accepted status',
@@ -342,6 +341,14 @@ class WebSocketService {
         
         if (isExpectedError) {
           console.log('WebSocket: Suppressed expected 400 error in ride namespace:', errorMessage);
+          return;
+        }
+        
+        // Special handling for "Ride is not in searching status" - don't suppress this
+        if (errorMessage.includes('Ride is not in searching status')) {
+          console.log('WebSocket: Received ride status error, not suppressing:', errorMessage);
+          // Emit the error so it can be handled by the callback
+          this.emit('error', error, 'ride');
           return;
         }
       }

@@ -80,12 +80,19 @@ const RideOffersScreen = () => {
   }, []);
 
   useEffect(() => {
+    console.log('RideOffers: Setting up for rideId:', rideId);
+    
+    // Clean up any existing WebSocket connections first
+    webSocketService.disconnect('ride');
+    webSocketService.disconnect('passenger');
+    
     loadOffers();
     setupWebSocket();
     
     return () => {
       // Cleanup WebSocket connection
-      webSocketService.disconnect();
+      webSocketService.disconnect('ride');
+      webSocketService.disconnect('passenger');
     };
   }, [rideId]);
 
@@ -129,10 +136,67 @@ const RideOffersScreen = () => {
     try {
       setAcceptLoading(prev => ({ ...prev, [offerId]: true }));
       setLoading(true);
+      
+      // First check the current ride status
+      try {
+        const rideDetails = await rideService.getRideDetails(rideId);
+        console.log('RideOffers: Current ride status before accepting offer:', rideDetails?.status);
+        
+        // If ride is not in searching status, refresh and show error
+        if (rideDetails?.status && rideDetails.status !== 'searching') {
+          showToast('Ride status has changed. Please refresh and try again.', 'error');
+          await loadOffers();
+          return;
+        }
+        
+        // Verify that the offer belongs to the current ride
+        const currentOffers = await rideService.getRideOffersForPassenger(rideId);
+        const offerExists = currentOffers.some(offer => offer._id === offerId);
+        if (!offerExists) {
+          showToast('Offer not found. Please refresh and try again.', 'error');
+          await loadOffers();
+          return;
+        }
+      } catch (error) {
+        console.log('RideOffers: Could not check ride status, proceeding with offer acceptance');
+      }
+      
       // Connect to RIDE namespace for ride-specific events
       await webSocketService.connect(rideId, 'ride');
-      webSocketService.emit('acceptRideOffer', { rideOfferId: offerId }, 'ride');
-      showToast('Offer accepted! Waiting for confirmation...', 'info');
+      
+      // Add callback handler for confirmation with timeout
+      let callbackFired = false;
+      const timeout = setTimeout(() => {
+        if (!callbackFired) {
+          console.log('Accept offer timeout - no response received');
+          showToast('Network timeout. Please try again.', 'error');
+          callbackFired = true;
+        }
+      }, 10000); // 10 second timeout
+      
+      webSocketService.emitEvent('acceptRideOffer', { rideOfferId: offerId, rideId: rideId }, (response: any) => {
+        if (callbackFired) return; // Prevent duplicate handling
+        callbackFired = true;
+        clearTimeout(timeout);
+        
+        console.log('Accept offer response:', response);
+        if (response?.code === 201) {
+          showToast('Offer accepted! Redirecting to ride...', 'success');
+        } else if (response?.code === 400 && response?.message?.includes('not in searching status')) {
+          showToast('Ride status has changed. Please refresh and try again.', 'error');
+          // Optionally refresh the offers
+          setTimeout(() => {
+            loadOffers();
+          }, 1000);
+        } else if (response?.code === 400) {
+          showToast('Failed to accept offer: ' + (response?.message || 'Unknown error'), 'error');
+        } else {
+          showToast('Failed to accept offer. Please try again.', 'error');
+        }
+      }, 'ride');
+      
+      // Show loading toast - be more specific about what's happening
+      showToast('Accepting offer...', 'info');
       // Do NOT reload offers or navigate here!
     } catch (error) {
       console.error('Error accepting offer:', error);
@@ -152,18 +216,18 @@ const RideOffersScreen = () => {
       await webSocketService.connect(rideId, 'ride');
       
       // Add callback handler for confirmation
-      webSocketService.emitEvent('rejectRideOffer', { rideOfferId: offerId }, (response: any) => {
+      webSocketService.emitEvent('rejectRideOffer', { rideOfferId: offerId, rideId: rideId }, (response: any) => {
         console.log('Reject offer response:', response);
         if (response?.code === 201) {
           // Remove the rejected offer from the list
           setOffers(prev => prev.filter(offer => offer._id !== offerId));
-          showToast('Offer rejected successfully', 'success');
+          showToast('Offer rejected', 'success');
         } else {
           showToast('Failed to reject offer: ' + (response?.message || 'Unknown error'), 'error');
         }
       }, 'ride');
       
-      showToast('Offer rejected! Waiting for confirmation...', 'info');
+      showToast('Rejecting offer...', 'info');
       // Do NOT reload offers or navigate here!
     } catch (error) {
       console.error('Error rejecting offer:', error);
@@ -232,6 +296,8 @@ const RideOffersScreen = () => {
 
   const setupWebSocket = async () => {
     try {
+      console.log('RideOffers: Setting up WebSocket for rideId:', rideId);
+      
       // Connect to passenger namespace for passenger-specific events
       await webSocketService.connect(undefined, 'passenger');
       // Connect to ride namespace for ride-specific events
@@ -241,6 +307,8 @@ const RideOffersScreen = () => {
       let newOfferListener: any;
       let rideAcceptedListener: any;
       let rideCancelledListener: any;
+      let rideStatusUpdateListener: any;
+      let rideErrorListener: any;
       
       // Listen for new offers (passenger namespace)
       newOfferListener = (data: any) => {
@@ -300,7 +368,35 @@ const RideOffersScreen = () => {
       };
       webSocketService.on('rideCancelled', rideCancelledListener, 'ride');
       
-
+      // Listen for ride status updates (ride namespace)
+      rideStatusUpdateListener = (data: any) => {
+        console.log('RideOffers: rideStatusUpdate event received:', data);
+        if (data && data.data && data.data.status) {
+          console.log('RideOffers: Ride status updated to:', data.data.status);
+          // If ride status changes to something other than searching, refresh offers
+          if (data.data.status !== 'searching') {
+            setTimeout(() => {
+              loadOffers();
+            }, 500);
+          }
+        }
+      };
+      webSocketService.on('rideStatusUpdate', rideStatusUpdateListener, 'ride');
+      
+      // Listen for ride errors (ride namespace)
+      rideErrorListener = (data: any) => {
+        console.log('RideOffers: ride error event received:', data);
+        if (data && data.code === 400 && data.message?.includes('not in searching status')) {
+          showToast('Ride status has changed. Please refresh and try again.', 'error');
+          setTimeout(() => {
+            loadOffers();
+          }, 1000);
+        } else if (data && data.code === 400) {
+          // Handle other 400 errors
+          showToast('Error: ' + (data.message || 'Unknown error'), 'error');
+        }
+      };
+      webSocketService.on('error', rideErrorListener, 'ride');
       
       // Cleanup function
       return () => {
@@ -308,6 +404,8 @@ const RideOffersScreen = () => {
         if (newOfferListener) webSocketService.off('newOffer', newOfferListener, 'passenger');
         if (rideAcceptedListener) webSocketService.off('rideAccepted', rideAcceptedListener, 'ride');
         if (rideCancelledListener) webSocketService.off('rideCancelled', rideCancelledListener, 'ride');
+        if (rideStatusUpdateListener) webSocketService.off('rideStatusUpdate', rideStatusUpdateListener, 'ride');
+        if (rideErrorListener) webSocketService.off('error', rideErrorListener, 'ride');
 
       };
       

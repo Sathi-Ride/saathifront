@@ -60,7 +60,7 @@ export interface Ride {
   dropOffLng?: number;
   offerPrice: number;
   finalPrice?: number;
-  status: 'pending' | 'accepted' | 'in-progress' | 'completed' | 'cancelled';
+  status: 'pending' | 'accepted' | 'in-progress' | 'completed' | 'cancelled' | 'searching';
   comments?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -374,15 +374,44 @@ class RideService {
   async acceptRideOffer(rideId: string, offerId: string): Promise<boolean> {
     try {
       console.log('RideService: Accepting offer via WebSocket:', { rideId, offerId });
+      
+      // Connect to ride namespace if not already connected
+      if (!webSocketService.isSocketConnected('ride')) {
+        await webSocketService.connect(rideId, 'ride');
+      }
+      
       return await new Promise((resolve, reject) => {
-        webSocketService.emit('acceptRideOffer', { rideOfferId: offerId });
-        webSocketService.on('acceptRideOffer', (response) => {
+        const timeout = setTimeout(() => {
+          webSocketService.off('acceptRideOffer', handleAcceptRideOffer, 'ride');
+          reject(new Error('Timeout accepting ride offer'));
+        }, 10000);
+
+        // Listen for accept ride offer response
+        const handleAcceptRideOffer = (data: any) => {
+          clearTimeout(timeout);
+          webSocketService.off('acceptRideOffer', handleAcceptRideOffer, 'ride');
+          console.log('WebSocket: Received accept ride offer event:', data);
+          if (data && data.code === 201) {
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        };
+
+        webSocketService.on('acceptRideOffer', handleAcceptRideOffer, 'ride');
+        
+        // Accept ride offer via WebSocket
+        console.log('WebSocket: Accepting ride offer for offerId:', offerId);
+        webSocketService.emitEvent('acceptRideOffer', { rideOfferId: offerId }, (response: any) => {
+          clearTimeout(timeout);
+          webSocketService.off('acceptRideOffer', handleAcceptRideOffer, 'ride');
+          console.log('WebSocket: acceptRideOffer callback response:', response);
           if (response && response.code === 201) {
             resolve(true);
           } else {
             resolve(false);
           }
-        });
+        }, 'ride');
       });
     } catch (error: any) {
       console.error('RideService: Error accepting ride offer:', error);

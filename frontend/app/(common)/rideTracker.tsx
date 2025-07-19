@@ -410,7 +410,7 @@ const RideTrackerScreen = () => {
 
   // --- STATE ---
   const [progress, setProgress] = useState(0);
-  const [rideStatus, setRideStatus] = useState<'accepted' | 'in-progress' | 'completed' | 'cancelled'>(
+  const [rideStatus, setRideStatus] = useState<'pending' | 'accepted' | 'in-progress' | 'completed' | 'cancelled' | 'searching'>(
     rideCancelled ? 'cancelled' : (rideInProgress ? 'in-progress' : 'accepted')
   );
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -455,7 +455,7 @@ const RideTrackerScreen = () => {
 
   // --- REFS ---
   const isMounted = useRef(true);
-  const rideStatusRef = useRef<'accepted' | 'in-progress' | 'completed' | 'cancelled'>(rideStatus as 'accepted' | 'in-progress' | 'completed' | 'cancelled');
+  const rideStatusRef = useRef<'pending' | 'accepted' | 'in-progress' | 'completed' | 'cancelled' | 'searching'>(rideStatus as 'pending' | 'accepted' | 'in-progress' | 'completed' | 'cancelled' | 'searching');
   const pickupLocationRef = useRef(pickupLocation);
   const dropoffLocationRef = useRef(dropoffLocation);
   const lastLocationUpdateRef = useRef(0);
@@ -651,6 +651,12 @@ const RideTrackerScreen = () => {
     const maxReconnectAttempts = 5;
 
     const checkWebSocketConnection = async () => {
+      // EARLY EXIT: Don't attempt reconnection for cancelled rides or searching rides
+      if (rideStatus === 'cancelled' || rideCancelled || rideStatus === 'searching') {
+        console.log('[RideTracker] Ride is cancelled or searching, skipping WebSocket reconnection attempts');
+        return;
+      }
+      
       const isConnected = webSocketService.isSocketConnected('ride');
       setIsWebSocketConnected(isConnected);
       
@@ -687,13 +693,19 @@ const RideTrackerScreen = () => {
       clearInterval(interval);
       reconnectAttempts = 0;
     };
-  }, [isComponentActive, rideId, ensureSocketConnected]);
+  }, [isComponentActive, rideId, ensureSocketConnected, rideStatus, rideCancelled]);
 
   // --- FOCUS LISTENER ---
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', async () => {
       console.log('[RideTracker] Component focused');
       setIsComponentActive(true);
+      
+      // EARLY EXIT: Don't attempt reconnection for cancelled rides
+      if (rideStatus === 'cancelled' || rideCancelled) {
+        console.log('[RideTracker] Ride is cancelled, skipping WebSocket reconnection on focus');
+        return;
+      }
       
       // Immediately check and reconnect WebSocket when component becomes focused
       setTimeout(async () => {
@@ -718,7 +730,7 @@ const RideTrackerScreen = () => {
       unsubscribe();
       blurUnsubscribe();
     };
-  }, [navigation, rideId, ensureSocketConnected]);
+  }, [navigation, rideId, ensureSocketConnected, rideStatus, rideCancelled]);
 
   // --- UPDATE DRIVER LOCATION ---
   const updateDriverLocation = useCallback(
@@ -1045,6 +1057,12 @@ const RideTrackerScreen = () => {
   // --- INITIALIZE LOCATION TRACKING ---
   const initializeLocationTracking = async () => {
     try {
+      // EARLY EXIT: Don't start location tracking for cancelled rides
+      if (rideStatus === 'cancelled' || rideCancelled) {
+        console.log('[initializeLocationTracking] Ride is cancelled, skipping location tracking');
+        return;
+      }
+      
       if (simulating) {
         console.log('[initializeLocationTracking] Simulation in progress, skipping real tracking');
         return;
@@ -1124,20 +1142,31 @@ const RideTrackerScreen = () => {
   // --- SETUP WEBSOCKET AND FETCH RIDE DETAILS ---
   useEffect(() => {
     isMounted.current = true;
-    console.log('[RideTracker] Setup effect for rideId:', rideId, 'userRole:', userRole);
+    console.log('[RideTracker] Initializing rideId:', rideId, 'userRole:', userRole, 'rideStatus:', rideStatus);
     
         const setupWebSocketAndFetch = async () => {
       try {
         setIsLoadingDetails(true);
         
-        // If ride is already cancelled, don't setup WebSocket or fetch details
-        if (rideStatus === 'cancelled') {
-          console.log('[setupWebSocketAndFetch] Ride is cancelled, skipping setup');
+        // EARLY EXIT: If ride is already cancelled, don't setup anything
+        if (rideStatus === 'cancelled' || rideCancelled) {
+          console.log('[setupWebSocketAndFetch] Ride is cancelled, skipping all setup');
+          setRideStatus('cancelled');
           setIsLoadingDetails(false);
+          showToast('This ride has been cancelled', 'info');
+          setTimeout(() => {
+            if (isMounted.current) {
+              if (userRole === 'passenger') {
+                router.push('/(tabs)');
+              } else {
+                router.push('/(driver)');
+              }
+            }
+          }, 2000);
           return;
         }
         
-        // First check ride status via REST API to avoid WebSocket connection to cancelled rides
+        // Check ride status via REST API first to avoid unnecessary WebSocket connections
         try {
           const rideDetailsResponse = await rideService.getRideDetails(rideId);
           if (rideDetailsResponse?.status === 'cancelled') {
@@ -1150,7 +1179,6 @@ const RideTrackerScreen = () => {
                 if (userRole === 'passenger') {
                   router.push('/(tabs)');
                 } else {
-                  // For drivers, go to logged-in driver home screen
                   router.push('/(driver)');
                 }
               }
@@ -1170,14 +1198,19 @@ const RideTrackerScreen = () => {
         
         const namespaces = ['ride', userRole];
         await Promise.all(namespaces.map(ns => ensureSocketConnected(rideId, ns as any)));
-        const details = (await emitWhenConnected('getRideDetails', { rideId }, 'ride')) as Ride;
-        console.log('[setupWebSocketAndFetch] Ride details:', JSON.stringify(details, null, 2));
+        const response = (await emitWhenConnected('getRideDetails', { rideId }, 'ride')) as any;
+        console.log('[setupWebSocketAndFetch] Ride details response:', JSON.stringify(response, null, 2));
+        
+        // Extract the actual ride details from the response
+        const details = response?.ride || response;
+        console.log('[setupWebSocketAndFetch] Extracted ride details:', JSON.stringify(details, null, 2));
+        
         if (isMounted.current && details) {
           setRideDetails(details);
           
-          // Check if ride is cancelled in the backend
-          if (details?.status === 'cancelled') {
-            console.log('[setupWebSocketAndFetch] Ride is cancelled in backend');
+          // Check if ride is cancelled or in searching status in the backend
+          if (details?.status === 'cancelled' || details?.status === 'searching') {
+            console.log('[setupWebSocketAndFetch] Ride is cancelled or searching in backend:', details?.status);
             setRideStatus('cancelled');
             setIsLoadingDetails(false);
             showToast('This ride has been cancelled', 'info');
@@ -1186,7 +1219,6 @@ const RideTrackerScreen = () => {
                 if (userRole === 'passenger') {
                   router.push('/(tabs)');
                 } else {
-                  // For drivers, go to logged-in driver home screen
                   router.push('/(driver)');
                 }
               }
@@ -1201,7 +1233,10 @@ const RideTrackerScreen = () => {
             };
             setPickupLocation(pickup);
             console.log('[setupWebSocketAndFetch] Set pickupLocation:', pickup);
+          } else {
+            console.error('[setupWebSocketAndFetch] Missing pickup location in ride details');
           }
+          
           if (details?.dropOff?.coords?.coordinates) {
             const dropoff = {
               lat: details.dropOff.coords.coordinates[1],
@@ -1209,7 +1244,18 @@ const RideTrackerScreen = () => {
             };
             setDropoffLocation(dropoff);
             console.log('[setupWebSocketAndFetch] Set dropoffLocation:', dropoff);
+          } else {
+            console.error('[setupWebSocketAndFetch] Missing dropoff location in ride details');
           }
+          
+          // Check if both locations are available in the details
+          if (!details?.pickUp?.coords?.coordinates || !details?.dropOff?.coords?.coordinates) {
+            console.error('[setupWebSocketAndFetch] Missing pickup or dropoff location in ride details');
+            showToast('Failed to load ride locations', 'error');
+            setIsLoadingDetails(false);
+            return;
+          }
+          
           if (details?.status === 'ongoing') {
             setRideStatus('in-progress');
             rideStartedConfirmedRef.current = true;
@@ -1271,244 +1317,24 @@ const RideTrackerScreen = () => {
                 details.currLocation.longitude,
                 pickupLocation.lat,
                 pickupLocation.lng
-              ) < 2
+              ) <= 2
             ) {
-              setDriverLocation({
+              defaultLocation = {
                 lat: details.currLocation.latitude,
                 lng: details.currLocation.longitude,
-              });
-              setCompletedRoute([
-                {
-                  lat: details.currLocation.latitude,
-                  lng: details.currLocation.longitude,
-                },
-              ]);
-              console.log('[setupWebSocketAndFetch] Set initial driverLocation for passenger:', details.currLocation);
-            } else {
-              // Do not set driver location or draw polyline until a valid update is received
-              setDriverLocation(null);
-              setCompletedRoute([]);
-              console.log('[setupWebSocketAndFetch] No valid initial driverLocation for passenger, waiting for update');
+              };
             }
+            setDriverLocation(defaultLocation);
+            setCompletedRoute([defaultLocation]);
+            console.log('[setupWebSocketAndFetch] Set passenger default driverLocation:', defaultLocation);
           }
         }
         setIsLoadingDetails(false);
-
-        webSocketService.on('rideStatusUpdate', (data: any) => {
-          if (!isMounted.current || !data) return;
-          console.log('[rideStatusUpdate] Received:', data);
-          setRideStatus(data.status === 'ongoing' ? 'in-progress' : data.status);
-        }, 'ride');
-        webSocketService.on('rideStarted', (data: any) => {
-          if (!isMounted.current) return;
-          console.log('[rideStarted] Received:', data);
-          
-          // Set pickup and dropoff locations from the data if available
-          if (data?.data?.pickUp?.coords?.coordinates) {
-            const pickup = {
-              lat: data.data.pickUp.coords.coordinates[1],
-              lng: data.data.pickUp.coords.coordinates[0],
-            };
-            setPickupLocation(pickup);
-            pickupLocationRef.current = pickup;
-            console.log('[rideStarted] Set pickupLocation from event:', pickup);
-          }
-          
-          if (data?.data?.dropOff?.coords?.coordinates) {
-            const dropoff = {
-              lat: data.data.dropOff.coords.coordinates[1],
-              lng: data.data.dropOff.coords.coordinates[0],
-            };
-            setDropoffLocation(dropoff);
-            dropoffLocationRef.current = dropoff;
-            console.log('[rideStarted] Set dropoffLocation from event:', dropoff);
-          }
-          
-          setRideStatus('in-progress');
-          rideStartedConfirmedRef.current = true;
-          setProgress(0);
-          progressStartedRef.current = false;
-          Animated.timing(progressAnimation, {
-            toValue: 0,
-            duration: 500,
-            useNativeDriver: false,
-          }).start();
-          
-          // Update driver location if provided in the event
-          if (data?.data?.currLocation) {
-            const newLocation = {
-              lat: data.data.currLocation.latitude,
-              lng: data.data.currLocation.longitude,
-            };
-            setDriverLocation(newLocation);
-            setCompletedRoute([newLocation]);
-            console.log('[rideStarted] Set driverLocation from event:', newLocation);
-          }
-          
-          // Store initial driver location for movement detection
-          if (driverLocation) {
-            initialDriverLocationRef.current = { ...driverLocation };
-            console.log('[rideStarted] Initial driver location:', initialDriverLocationRef.current);
-          }
-          
-          showToast('Ride started!', 'success');
-          console.log('[rideStarted] Progress will stay at 0% until driver moves');
-        }, 'ride');
-        webSocketService.on('rideCompleted', (data: any) => {
-          if (!isMounted.current) return;
-          console.log('[rideCompleted] Received:', data);
-          setRideStatus('completed');
-          setRideStartTime(null);
-          showToast('Ride completed!', 'success');
-          setTimeout(() => {
-            if (isMounted.current) {
-              if (userRole === 'passenger') {
-                router.push({
-                  pathname: '/(tabs)/rideRate',
-                  params: { rideId, driverName, passengerName, from, to, fare, vehicle },
-                });
-              } else {
-                // For drivers, go to logged-in driver home screen
-                router.push('/(driver)');
-              }
-            }
-          }, 2000);
-        }, 'ride');
-        webSocketService.on('rideLocationUpdated', handleRideLocationUpdated, 'ride');
-        
-        // Add error handler for WebSocket errors
-        webSocketService.on('error', (error: any) => {
-          // Suppress expected 400 errors
-          if (error && error.code === 400) {
-            const errorMessage = error.message || '';
-            const expectedErrors = [
-              'Failed to update location',
-              'Ride ID is required',
-              'Ride is not in accepted/ongoing status',
-              'Only driver can update ride location',
-              'Ride not found',
-              'Invalid ride ID format',
-              'Invalid coordinates provided',
-              'Progress must be a number between 0 and 100',
-              'User authentication required',
-              'Message content is required',
-              'Message ID is required',
-              'Ride offer ID is required',
-              'Can only reject submitted offers',
-              'Ride is not in searching status',
-              'Ride offer is not in submitted status',
-              'Ride is not in cancelable status',
-              'Ride is not in accepted status',
-              'Only driver can start ride',
-              'Ride is not in ongoing status',
-              'Only driver can end ride'
-            ];
-            const isExpectedError = expectedErrors.some(expectedError => errorMessage.includes(expectedError));
-            if (isExpectedError) {
-              showToast('WebSocket: ' + errorMessage, 'error');
-              return;
-            }
-          }
-          showToast('WebSocket error: ' + (error?.message || 'Unknown error'), 'error');
-          console.error('[WebSocket] Error in ride namespace:', error);
-        }, 'ride');
-        
-        // Also add error handler for the socket itself
-        const rideSocket = webSocketService.getSocket('ride');
-        if (rideSocket) {
-          rideSocket.on('error', (error: any) => {
-            // Suppress expected 400 errors
-            if (error && error.code === 400) {
-              const errorMessage = error.message || '';
-              
-              // List of expected error messages that should be suppressed
-              const expectedErrors = [
-                'Failed to update location',
-                'Ride ID is required',
-                'Ride is not in accepted/ongoing status',
-                'Only driver can update ride location',
-                'Ride not found',
-                'Invalid ride ID format',
-                'Invalid coordinates provided',
-                'Progress must be a number between 0 and 100',
-                'User authentication required',
-                'Message content is required',
-                'Message ID is required',
-                'Ride offer ID is required',
-                'Can only reject submitted offers',
-                'Ride is not in searching status',
-                'Ride offer is not in submitted status',
-                'Ride is not in cancelable status',
-                'Ride is not in accepted status',
-                'Only driver can start ride',
-                'Ride is not in ongoing status',
-                'Only driver can end ride'
-              ];
-              
-              const isExpectedError = expectedErrors.some(expectedError => 
-                errorMessage.includes(expectedError)
-              );
-              
-              if (isExpectedError) {
-                console.log('[WebSocket] Suppressed expected 400 socket error in ride namespace:', errorMessage);
-                return;
-              }
-            }
-            console.error('[WebSocket] Socket error in ride namespace:', error);
-          });
-        }
-        
-        webSocketService.on('rideCancelled', (data: any) => {
-          if (!isMounted.current) return;
-          console.log('[rideCancelled] Received:', data);
-          const cancellationReason = data?.cancellationReason || 'Ride was cancelled';
-          const cancelledBy = data?.cancelledBy || 'unknown';
-          showToast(`Ride cancelled by ${cancelledBy}: ${cancellationReason}`, 'info');
-          
-          // Clean up state and connections
-          setRideStatus('cancelled');
-          setSimulating(false);
-          setRideStartTime(null);
-          locationService.stopLocationTracking();
-          locationTrackingStartedRef.current = false;
-          
-          // Clean up WebSocket connections
-          webSocketService.disconnect('ride');
-          webSocketService.disconnect(userRole);
-          
-          setTimeout(() => {
-            if (isMounted.current) {
-              if (userRole === 'passenger') {
-                router.push('/(tabs)');
-              } else {
-                // For drivers, go to logged-in driver home screen
-                router.push('/(driver)');
-              }
-            }
-          }, 2000);
-        }, 'ride');
       } catch (error) {
         console.error('[setupWebSocketAndFetch] Error:', error);
-        showToast('Failed to load ride details', 'error');
         setIsLoadingDetails(false);
+        showToast('Failed to load ride details', 'error');
       }
-    };
-    
-    const startPulseAnimation = () => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnimation, {
-            toValue: 1.2,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnimation, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
     };
     
     setupWebSocketAndFetch().catch(error => {
@@ -1517,24 +1343,18 @@ const RideTrackerScreen = () => {
       setHasError(true);
     });
     
+    // EARLY EXIT: Don't start location tracking for cancelled rides
     if (userRole === 'driver' && rideStatus === 'in-progress' && rideStartedConfirmedRef.current) {
       initializeLocationTracking();
     }
-    startPulseAnimation();
     
     return () => {
       console.log('[RideTracker] Cleanup effect');
       isMounted.current = false;
       locationService.stopLocationTracking();
       locationTrackingStartedRef.current = false;
-        webSocketService.disconnect('ride');
+      webSocketService.disconnect('ride');
       webSocketService.disconnect(userRole);
-      webSocketService.off('rideStatusUpdate', undefined, 'ride');
-      webSocketService.off('rideStarted', undefined, 'ride');
-      webSocketService.off('rideCompleted', undefined, 'ride');
-      webSocketService.off('rideLocationUpdated', handleRideLocationUpdated, 'ride');
-      webSocketService.off('error', undefined, 'ride');
-      webSocketService.off('rideCancelled', undefined, 'ride');
       
       // Clean up socket error handler
       const rideSocket = webSocketService.getSocket('ride');
@@ -1542,10 +1362,157 @@ const RideTrackerScreen = () => {
         rideSocket.off('error');
       }
     };
-  }, [rideId, userRole]);
+  }, [rideId, userRole, rideCancelled]);
+
+  // --- WEBSOCKET EVENT LISTENERS ---
+  useEffect(() => {
+    // EARLY EXIT: Don't setup listeners for cancelled rides
+    if (rideStatus === 'cancelled' || rideCancelled) {
+      console.log('[RideTracker] Ride is cancelled, skipping WebSocket event listeners');
+      return;
+    }
+
+    // EARLY EXIT: Don't setup listeners if still loading details
+    if (isLoadingDetails) {
+      console.log('[RideTracker] Still loading details, skipping event listeners');
+      return;
+    }
+
+    // EARLY EXIT: Don't setup listeners if WebSocket is not connected
+    if (!webSocketService.isSocketConnected('ride')) {
+      console.log('[RideTracker] WebSocket not connected to ride namespace, skipping event listeners');
+      return;
+    }
+
+    console.log('[RideTracker] Setting up WebSocket event listeners');
+
+    // Handle ride cancellation
+    const handleRideCancelled = (data: any) => {
+      console.log('[RideTracker] Ride cancelled event received:', data);
+      if (data && data.code === 201 && data.data) {
+        setRideStatus('cancelled');
+        showToast('Ride has been cancelled', 'info');
+        
+        // Navigate back to appropriate screen after a short delay
+        setTimeout(() => {
+          if (isMounted.current) {
+            if (userRole === 'passenger') {
+              router.push('/(tabs)');
+            } else {
+              router.push('/(driver)');
+            }
+          }
+        }, 2000);
+      }
+    };
+
+    // Handle ride status updates
+    const handleRideStatusUpdate = (data: any) => {
+      console.log('[RideTracker] Ride status update received:', data);
+      if (data && data.data && data.data.status) {
+        const newStatus = data.data.status;
+        console.log('[RideTracker] Status changed to:', newStatus);
+        
+        if (newStatus === 'cancelled') {
+          setRideStatus('cancelled');
+          showToast('Ride has been cancelled', 'info');
+          setTimeout(() => {
+            if (isMounted.current) {
+              if (userRole === 'passenger') {
+                router.push('/(tabs)');
+              } else {
+                router.push('/(driver)');
+              }
+            }
+          }, 2000);
+        } else if (newStatus === 'completed') {
+          setRideStatus('completed');
+          showToast('Ride completed!', 'success');
+          setTimeout(() => {
+            if (isMounted.current) {
+              if (userRole === 'passenger') {
+                router.push('/(tabs)');
+              } else {
+                router.push('/(driver)');
+              }
+            }
+          }, 2000);
+        } else if (newStatus === 'searching') {
+          // If ride goes back to searching, it means it was cancelled/reset
+          setRideStatus('cancelled');
+          showToast('Ride has been cancelled', 'info');
+          setTimeout(() => {
+            if (isMounted.current) {
+              if (userRole === 'passenger') {
+                router.push('/(tabs)');
+              } else {
+                router.push('/(driver)');
+              }
+            }
+          }, 2000);
+        } else {
+          // Update status for other status changes
+          setRideStatus(newStatus as any);
+        }
+      }
+    };
+
+    // Handle ride started
+    const handleRideStarted = (data: any) => {
+      console.log('[RideTracker] Ride started event received:', data);
+      if (data && data.code === 201) {
+        setRideStatus('in-progress');
+        rideStartedConfirmedRef.current = true;
+        showToast('Ride started!', 'success');
+      }
+    };
+
+    // Handle ride completed
+    const handleRideCompleted = (data: any) => {
+      console.log('[RideTracker] Ride completed event received:', data);
+      if (data && data.code === 201) {
+        setRideStatus('completed');
+        showToast('Ride completed!', 'success');
+        setTimeout(() => {
+          if (isMounted.current) {
+            if (userRole === 'passenger') {
+              router.push('/(tabs)');
+            } else {
+              router.push('/(driver)');
+            }
+          }
+        }, 2000);
+      }
+    };
+
+    // Set up event listeners
+    webSocketService.on('rideCancelled', handleRideCancelled, 'ride');
+    webSocketService.on('rideStatusUpdate', handleRideStatusUpdate, 'ride');
+    webSocketService.on('rideStarted', handleRideStarted, 'ride');
+    webSocketService.on('rideCompleted', handleRideCompleted, 'ride');
+    webSocketService.on('rideLocationUpdated', handleRideLocationUpdated, 'ride');
+    
+    console.log('[RideTracker] WebSocket event listeners set up successfully');
+
+    // Cleanup function
+    return () => {
+      console.log('[RideTracker] Cleaning up WebSocket event listeners');
+      webSocketService.off('rideCancelled', handleRideCancelled, 'ride');
+      webSocketService.off('rideStatusUpdate', handleRideStatusUpdate, 'ride');
+      webSocketService.off('rideStarted', handleRideStarted, 'ride');
+      webSocketService.off('rideCompleted', handleRideCompleted, 'ride');
+      webSocketService.off('rideLocationUpdated', handleRideLocationUpdated, 'ride');
+    };
+  }, [rideId, userRole, rideStatus, rideCancelled, router, isWebSocketConnected, isLoadingDetails]);
 
   // --- START LOCATION TRACKING ---
   useEffect(() => {
+    // EARLY EXIT: Don't start location tracking for cancelled rides
+    if (rideStatus === 'cancelled' || rideCancelled) {
+      console.log('[RideTracker] Ride is cancelled, skipping location tracking initialization');
+      return;
+    }
+    
     // CRITICAL: Only drivers should track location during rides
     // Passengers should NEVER send location updates during rides
     if (userRole === 'driver' && rideStatus === 'in-progress' && !simulating && rideStartedConfirmedRef.current) {
@@ -1562,7 +1529,7 @@ const RideTrackerScreen = () => {
         rideStartedConfirmed: rideStartedConfirmedRef.current
       });
     }
-  }, [userRole, rideStatus, simulating, rideStartedConfirmedRef.current]);
+  }, [userRole, rideStatus, simulating, rideStartedConfirmedRef.current, rideCancelled]);
 
   // --- GENERATE ROUTE POLYLINES ---
   // Helper to find closest point index on polyline
@@ -1801,6 +1768,13 @@ const RideTrackerScreen = () => {
     // Show confirmation modal if ride is in progress or accepted
     if (rideStatus === 'in-progress' || rideStatus === 'accepted') {
       setShowBackConfirmation(true);
+    } else if (rideStatus === 'cancelled' || rideStatus === 'searching') {
+      // If ride is cancelled or searching, just go back without confirmation
+      console.log('[handleBackButtonPress] Ride is cancelled or searching, going back directly');
+      locationService.stopLocationTracking();
+      webSocketService.disconnect('ride');
+      webSocketService.disconnect(userRole);
+      router.back();
     } else {
       router.back();
     }
@@ -1841,11 +1815,11 @@ const RideTrackerScreen = () => {
     try {
       console.log('[handleConfirmCancelRide] Cancelling ride, rideId:', rideId, 'reason:', cancellationReason);
       
-      // First check if ride is already cancelled via REST API
+      // First check if ride is already cancelled or in searching status via REST API
       try {
         const rideDetailsResponse = await rideService.getRideDetails(rideId);
-        if (rideDetailsResponse?.status === 'cancelled') {
-          console.log('[handleConfirmCancelRide] Ride is already cancelled in backend');
+        if (rideDetailsResponse?.status === 'cancelled' || rideDetailsResponse?.status === 'searching') {
+          console.log('[handleConfirmCancelRide] Ride is already cancelled or searching in backend:', rideDetailsResponse?.status);
           setRideStatus('cancelled');
           showToast('Ride is already cancelled', 'info');
           setIsCancellationModalVisible(false);
@@ -1965,6 +1939,8 @@ const RideTrackerScreen = () => {
         return 'Ride completed';
       case 'cancelled':
         return 'Ride cancelled';
+      case 'searching':
+        return 'Ride cancelled';
       default:
         return 'Unknown status';
     }
@@ -1979,6 +1955,8 @@ const RideTrackerScreen = () => {
       case 'completed':
         return '#075B5E';
       case 'cancelled':
+        return '#F44336';
+      case 'searching':
         return '#F44336';
       default:
         return '#666';
@@ -2174,6 +2152,15 @@ const RideTrackerScreen = () => {
         >
           <Text style={styles.buttonText}>Go to Home</Text>
         </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (isLoadingDetails) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#075B5E" />
+        <Text style={{ marginTop: 16 }}>Loading ride details...</Text>
       </View>
     );
   }
