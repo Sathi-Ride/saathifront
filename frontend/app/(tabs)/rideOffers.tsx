@@ -8,10 +8,12 @@ import {
   ActivityIndicator,
   StatusBar,
   Dimensions,
+  BackHandler,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import Toast from '../../components/ui/Toast';
+import ConfirmationModal from '../../components/ui/ConfirmationModal';
 import { rideService, RideOffer } from '../utils/rideService';
 import webSocketService from '../utils/websocketService';
 import { useUserRole } from '../utils/userRoleManager';
@@ -42,6 +44,8 @@ const RideOffersScreen = () => {
   const [rejectLoading, setRejectLoading] = useState<{ [key: string]: boolean }>({});
   const [selectedOffer, setSelectedOffer] = useState<RideOffer | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [toast, setToast] = useState<{
     visible: boolean;
     message: string;
@@ -62,6 +66,18 @@ const RideOffersScreen = () => {
   const hideToast = () => {
     setToast(prev => ({ ...prev, visible: false }));
   };
+
+  // Handle back button press
+  useEffect(() => {
+    const backAction = () => {
+      // Show confirmation dialog when back is pressed
+      setShowCancelConfirmation(true);
+      return true; // Prevent default back action
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, []);
 
   useEffect(() => {
     loadOffers();
@@ -131,9 +147,22 @@ const RideOffersScreen = () => {
     try {
       setRejectLoading(prev => ({ ...prev, [offerId]: true }));
       setLoading(true);
+      
       // Connect to RIDE namespace for ride-specific events
       await webSocketService.connect(rideId, 'ride');
-      webSocketService.emit('rejectRideOffer', { rideOfferId: offerId }, 'ride');
+      
+      // Add callback handler for confirmation
+      webSocketService.emitEvent('rejectRideOffer', { rideOfferId: offerId }, (response: any) => {
+        console.log('Reject offer response:', response);
+        if (response?.code === 201) {
+          // Remove the rejected offer from the list
+          setOffers(prev => prev.filter(offer => offer._id !== offerId));
+          showToast('Offer rejected successfully', 'success');
+        } else {
+          showToast('Failed to reject offer: ' + (response?.message || 'Unknown error'), 'error');
+        }
+      }, 'ride');
+      
       showToast('Offer rejected! Waiting for confirmation...', 'info');
       // Do NOT reload offers or navigate here!
     } catch (error) {
@@ -143,6 +172,62 @@ const RideOffersScreen = () => {
       setRejectLoading(prev => ({ ...prev, [offerId]: false }));
       setLoading(false);
     }
+  };
+
+  const handleBackPress = () => {
+    setShowCancelConfirmation(true);
+  };
+
+  const handleCancelRideRequest = () => {
+    setShowCancelConfirmation(true);
+  };
+
+  const confirmCancelRideRequest = async () => {
+    try {
+      setCancelling(true);
+      setShowCancelConfirmation(false);
+      
+      // Cancel the ride request
+      const success = await rideService.cancelRide(rideId, 'Cancelled by passenger');
+      
+      if (success) {
+        // Emit passenger cancelled event to notify drivers
+        try {
+          console.log('RideOffers: Cancelling ride request, rideId:', rideId);
+          
+          // Connect to driver namespace to notify all drivers
+          await webSocketService.connect(undefined, 'driver');
+          console.log('RideOffers: Connected to driver namespace, emitting passengerCancelledRide');
+          webSocketService.emit('passengerCancelledRide', { rideId }, 'driver');
+          
+          // Also emit to ride namespace for any ride-specific listeners
+          await webSocketService.connect(rideId, 'ride');
+          console.log('RideOffers: Connected to ride namespace, emitting passengerCancelledRide');
+          webSocketService.emit('passengerCancelledRide', { rideId }, 'ride');
+          
+          console.log('RideOffers: Successfully emitted cancellation events');
+        } catch (wsError) {
+          console.log('WebSocket error when notifying drivers of cancellation:', wsError);
+        }
+        
+        showToast('Ride request cancelled', 'info');
+        // Navigate back to home screen
+        setTimeout(() => {
+          router.push('/(tabs)');
+        }, 1500);
+      } else {
+        showToast('Failed to cancel ride request', 'error');
+      }
+    } catch (error) {
+      console.error('Error cancelling ride request:', error);
+      showToast('Error cancelling ride request', 'error');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const cancelCancelRideRequest = () => {
+    setShowCancelConfirmation(false);
   };
 
   const setupWebSocket = async () => {
@@ -155,6 +240,7 @@ const RideOffersScreen = () => {
       let isMounted = true;
       let newOfferListener: any;
       let rideAcceptedListener: any;
+      let rideCancelledListener: any;
       
       // Listen for new offers (passenger namespace)
       newOfferListener = (data: any) => {
@@ -201,11 +287,28 @@ const RideOffersScreen = () => {
       };
       webSocketService.on('rideAccepted', rideAcceptedListener, 'ride');
       
+      // Listen for ride cancelled (ride namespace)
+      rideCancelledListener = (data: any) => {
+        console.log('RideOffers: rideCancelled event received:', data);
+        if (data && data.data) {
+          showToast('Ride request has been cancelled', 'info');
+          // Navigate back to home screen
+          setTimeout(() => {
+            router.push('/(tabs)');
+          }, 2000);
+        }
+      };
+      webSocketService.on('rideCancelled', rideCancelledListener, 'ride');
+      
+
+      
       // Cleanup function
       return () => {
         isMounted = false;
         if (newOfferListener) webSocketService.off('newOffer', newOfferListener, 'passenger');
         if (rideAcceptedListener) webSocketService.off('rideAccepted', rideAcceptedListener, 'ride');
+        if (rideCancelledListener) webSocketService.off('rideCancelled', rideCancelledListener, 'ride');
+
       };
       
     } catch (error) {
@@ -292,11 +395,17 @@ const RideOffersScreen = () => {
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={handleBackPress}>
           <MaterialIcons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Driver Offers</Text>
-        <View style={styles.placeholder} />
+        <TouchableOpacity 
+          style={styles.cancelButton}
+          onPress={handleCancelRideRequest}
+          disabled={cancelling}
+        >
+          <MaterialIcons name="close" size={24} color="#EA2F14" />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.rideInfo}>
@@ -340,6 +449,17 @@ const RideOffersScreen = () => {
         type={toast.type}
         onHide={hideToast}
       />
+
+      <ConfirmationModal
+        visible={showCancelConfirmation}
+        title="Leave Ride Offers?"
+        message="Are you sure you want to leave? This will cancel your ride request."
+        confirmText="Leave"
+        cancelText="Stay"
+        onConfirm={confirmCancelRideRequest}
+        onCancel={cancelCancelRideRequest}
+        type="warning"
+      />
     </View>
   );
 };
@@ -367,6 +487,9 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 24,
+  },
+  cancelButton: {
+    padding: 8,
   },
   rideInfo: {
     backgroundColor: '#fff',

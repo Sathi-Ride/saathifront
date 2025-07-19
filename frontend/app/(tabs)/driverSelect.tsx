@@ -1,3 +1,4 @@
+//This is mock as my old Ui-based layout used it for bargaing, changed based on client's request
 "use client"
 
 import React, { useState, useEffect } from 'react';

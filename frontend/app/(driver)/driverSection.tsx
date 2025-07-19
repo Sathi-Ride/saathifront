@@ -69,6 +69,9 @@ const DriverSection = () => {
 
   const [offerLoading, setOfferLoading] = useState<{ [key: string]: boolean }>({});
   const [newRideRequest, setNewRideRequest] = useState<any>(null);
+  const [acceptedOfferId, setAcceptedOfferId] = useState<string | null>(null);
+  const [showPassengerCancelledModal, setShowPassengerCancelledModal] = useState(false);
+  const [cancelledRideId, setCancelledRideId] = useState<string | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     setToast({ visible: true, message, type });
@@ -155,6 +158,7 @@ const DriverSection = () => {
       let isMounted = true;
       let newRideRequestListener: any;
       let offerAcceptedListener: any;
+      let offerRejectedListener: any;
       
       // Listen for new ride requests (driver namespace)
       newRideRequestListener = (event: any) => {
@@ -175,6 +179,7 @@ const DriverSection = () => {
         console.log('DriverSection: Offer accepted event received:', data);
         if (data && data.code === 201 && data.data && data.data.ride) {
           const ride = data.data.ride;
+          setAcceptedOfferId(ride._id);
           showToast('Your offer was accepted!', 'success');
           // Set user role to driver before navigating
           await userRoleManager.setRole('driver');
@@ -196,11 +201,88 @@ const DriverSection = () => {
       };
       webSocketService.on('offerAccepted', offerAcceptedListener, 'driver');
       
+      // Listen for passenger cancelled ride (driver namespace)
+      const passengerCancelledListener = (data: any) => {
+        if (!isMounted) return;
+        console.log('DriverSection: Passenger cancelled ride event received:', data);
+        console.log('DriverSection: Event data structure:', JSON.stringify(data, null, 2));
+        
+        // Handle different possible data structures
+        let rideId = null;
+        if (data && data.rideId) {
+          rideId = data.rideId;
+        } else if (data && data.data && data.data.rideId) {
+          rideId = data.data.rideId;
+        }
+        
+        console.log('DriverSection: Extracted rideId:', rideId);
+        console.log('DriverSection: Current available rides:', availableRides.map(r => r._id));
+        
+        if (rideId) {
+          console.log('DriverSection: Processing cancellation for rideId:', rideId);
+          
+          setCancelledRideId(rideId);
+          setShowPassengerCancelledModal(true);
+          
+          // Remove the cancelled ride from available rides
+          setAvailableRides(prev => {
+            console.log('DriverSection: Filtering rides, removing:', rideId);
+            console.log('DriverSection: Before filter:', prev.map(r => r._id));
+            const filtered = prev.filter(ride => ride._id !== rideId);
+            console.log('DriverSection: After filter:', filtered.map(r => r._id));
+            return filtered;
+          });
+          
+          // If this was the accepted offer, clear the accepted offer state
+          if (acceptedOfferId === rideId) {
+            console.log('DriverSection: Clearing accepted offer:', rideId);
+            setAcceptedOfferId(null);
+          }
+          
+          showToast('Passenger cancelled the ride request', 'info');
+        } else {
+          console.log('DriverSection: Could not extract rideId from data');
+        }
+      };
+      webSocketService.on('passengerCancelledRide', passengerCancelledListener, 'driver');
+      
+      // Listen for offer rejected (driver namespace)
+      offerRejectedListener = (data: any) => {
+        if (!isMounted) return;
+        console.log('DriverSection: Offer rejected event received:', data);
+        
+        if (data && data.data && data.data._id) {
+          const rejectedOfferId = data.data._id;
+          const rideId = data.data.rideId;
+          console.log('DriverSection: Processing rejected offer:', rejectedOfferId, 'for ride:', rideId);
+          
+          // Clear the pending offer state for this specific ride
+          if (pendingOfferRideId === rideId) {
+            setPendingOfferRideId(null);
+          }
+          
+          // Clear the accepted offer state if this was the accepted offer
+          if (acceptedOfferId === rideId) {
+            setAcceptedOfferId(null);
+          }
+          
+          // Clear the loading state for this ride
+          setOfferLoading(prev => ({ ...prev, [rideId]: false }));
+          
+          showToast('Your offer was rejected by passenger', 'info');
+        } else if (data && data.code && data.code !== 201) {
+          showToast(data.message || 'Error processing offer rejection', 'error');
+        }
+      };
+      webSocketService.on('offerRejected', offerRejectedListener, 'driver');
+      
       // Cleanup function
       return () => {
         isMounted = false;
         if (newRideRequestListener) webSocketService.off('newRideRequest', newRideRequestListener, 'driver');
         if (offerAcceptedListener) webSocketService.off('offerAccepted', offerAcceptedListener, 'driver');
+        if (passengerCancelledListener) webSocketService.off('passengerCancelledRide', passengerCancelledListener, 'driver');
+        if (offerRejectedListener) webSocketService.off('offerRejected', offerRejectedListener, 'driver');
       };
       
     } catch (error) {
@@ -283,6 +365,12 @@ const DriverSection = () => {
   };
 
   const handleMakeOffer = async (ride: Ride) => {
+    // Prevent accepting multiple offers
+    if (acceptedOfferId) {
+      showToast('You have already accepted an offer. Please complete that ride first.', 'error');
+      return;
+    }
+    
     try {
       console.log('handleMakeOffer called', ride);
       setOfferLoading(prev => ({ ...prev, [ride._id]: true }));
@@ -424,11 +512,16 @@ const DriverSection = () => {
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => handleMakeOffer(item)}
-          disabled={offerLoading[item._id] || loading}
-          style={[styles.acceptButton, offerLoading[item._id] && styles.acceptButtonDisabled]}
+          disabled={offerLoading[item._id] || loading || acceptedOfferId !== null}
+          style={[
+            styles.acceptButton, 
+            (offerLoading[item._id] || acceptedOfferId !== null) && styles.acceptButtonDisabled
+          ]}
         >
           {offerLoading[item._id] ? (
             <ActivityIndicator size="small" color="#fff" />
+          ) : acceptedOfferId !== null ? (
+            <Text style={styles.acceptButtonText}>Offer Accepted</Text>
           ) : (
             <Text style={styles.acceptButtonText}>Make Offer</Text>
           )}
@@ -723,6 +816,20 @@ const DriverSection = () => {
           onConfirm={handleConfirmBack}
           onCancel={handleCancelBack}
           type="warning"
+        />
+
+        <ConfirmationModal
+          visible={showPassengerCancelledModal}
+          title="Passenger Cancelled Ride"
+          message="The passenger has cancelled this ride request. You can now accept other offers."
+          confirmText="OK"
+          cancelText=""
+          onConfirm={() => {
+            setShowPassengerCancelledModal(false);
+            setCancelledRideId(null);
+          }}
+          onCancel={() => {}}
+          type="info"
         />
       </SafeAreaView>
   );

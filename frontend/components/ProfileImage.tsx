@@ -56,9 +56,23 @@ const ProfileImage: React.FC<ProfileImageProps> = ({
     setImageError(false);
   };
 
+  // Add timeout to prevent infinite loading
+  React.useEffect(() => {
+    if (imageLoading) {
+      const timeout = setTimeout(() => {
+        console.log('ProfileImage: Loading timeout, showing fallback');
+        setImageLoading(false);
+        setImageError(true);
+      }, 5000); // 5 second timeout
+
+      return () => clearTimeout(timeout);
+    }
+  }, [imageLoading]);
+
   const handleImageError = () => {
     setImageLoading(false);
     setImageError(true);
+    console.log('ProfileImage: Failed to load image:', photoUrl);
   };
 
   const isValidImageUrl = (url: string) => {
@@ -68,14 +82,15 @@ const ProfileImage: React.FC<ProfileImageProps> = ({
            !imageError;
   };
 
+  // Reset error state when photoUrl changes
+  React.useEffect(() => {
+    setImageError(false);
+    setImageLoading(false);
+  }, [photoUrl]);
+
   if (isValidImageUrl(photoUrl || '')) {
     return (
       <View style={containerStyle}>
-        {imageLoading && (
-          <View style={[styles.loadingContainer, { width: size, height: size, borderRadius: size / 2 }]}>
-            <ActivityIndicator size="small" color="#075B5E" />
-          </View>
-        )}
         <Image
           source={{ uri: photoUrl! }}
           style={imageStyle}
@@ -83,6 +98,11 @@ const ProfileImage: React.FC<ProfileImageProps> = ({
           onLoad={handleImageLoad}
           onError={handleImageError}
         />
+        {imageLoading && (
+          <View style={[styles.loadingContainer, { width: size, height: size, borderRadius: size / 2 }]}>
+            <ActivityIndicator size="small" color="#075B5E" />
+          </View>
+        )}
       </View>
     );
   }
