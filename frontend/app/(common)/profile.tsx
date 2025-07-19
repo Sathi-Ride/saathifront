@@ -6,8 +6,11 @@ import { useRouter } from 'expo-router';
 import apiClient from '../utils/apiClient';
 import * as ImagePicker from 'expo-image-picker';
 import AppModal from '../../components/ui/AppModal';
+import Constants from 'expo-constants';
 
 const { width } = Dimensions.get('window');
+const ASSET_BASE_URL = Constants.expoConfig?.extra?.PUBLIC_ASSET_URL || 'http://192.168.1.71:9000';
+const DEFAULT_BASE_URL = Constants.expoConfig?.extra?.DEFAULT_BASE_URL || 'http://localhost:3000';
 
 const ProfileSettingsScreen = () => {
   const router = useRouter();
@@ -39,7 +42,7 @@ const ProfileSettingsScreen = () => {
   const getFullImageUrl = (imageUrl: string | null | undefined) => {
     if (!imageUrl) return 'https://www.shutterstock.com/image-vector/default-avatar-photo-placeholder-grey-600nw-2007531536.jpg';
     if (imageUrl.startsWith('http')) return imageUrl;
-    return `http://192.168.1.72:9000${imageUrl}`;
+    return `${ASSET_BASE_URL}${imageUrl}`;
   };
 
   useEffect(() => {
@@ -132,7 +135,7 @@ const ProfileSettingsScreen = () => {
           // Fix localhost URL to use correct server IP
           let fixedImageUrl = imageUrl;
           if (imageUrl.includes('localhost:3000')) {
-            fixedImageUrl = imageUrl.replace('http://localhost:3000', 'http://192.168.1.72:9000');
+            fixedImageUrl = imageUrl.replace(DEFAULT_BASE_URL, ASSET_BASE_URL);
             console.log('Fixed localhost URL to:', fixedImageUrl);
           }
           

@@ -1,8 +1,9 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import webSocketService from './websocketService';
+import Constants from 'expo-constants';
 
-const API_URL = 'http://192.168.0.66:9000/api/v1';
+const API_URL = Constants.expoConfig?.extra?.API_URL || 'http://192.168.1.71:9000/api/v1';
 
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -82,5 +83,17 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Helper to get the current user's ID from /me endpoint
+export async function getCurrentUserId(): Promise<string | null> {
+  try {
+    const response = await apiClient.get('me');
+    const userData = response.data.data;
+    return userData?._id || null;
+  } catch (err) {
+    console.error('Failed to fetch current user ID:', err);
+    return null;
+  }
+}
 
 export default apiClient;

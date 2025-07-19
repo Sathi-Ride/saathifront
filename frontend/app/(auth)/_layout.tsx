@@ -8,7 +8,6 @@ export default function Layout() {
       <Stack.Screen name="phoneLogin" options={{ headerShown: false }} />
       <Stack.Screen name="phoneRegister" options={{ headerShown: false }} />
       <Stack.Screen name="setup" options={{ headerShown: false }} />
-      <Stack.Screen name="[setup]" options={{ headerShown: false }} /> 
       <Stack.Screen name="verify" options={{ headerShown: false }} />
     </Stack>
   );

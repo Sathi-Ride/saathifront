@@ -183,14 +183,20 @@ const PassengerHomeScreen = () => {
   // --- PRICE ADJUSTMENT HANDLERS ---
   const handleAdjustUp = () => {
     if (canAdjustPrice && adjustUpCount < 2) {
-      setPriceAdjustment(prev => prev + 5);
+      const currentPrice = parseFloat(offerPrice) + priceAdjustment;
+      const newPrice = Math.round((currentPrice + 5) * 100) / 100;
+      const newAdjustment = newPrice - parseFloat(offerPrice);
+      setPriceAdjustment(newAdjustment);
       setAdjustUpCount(prev => prev + 1);
       if (adjustDownCount > 0) setAdjustDownCount(0); // Reset down count if going up
     }
   };
   const handleAdjustDown = () => {
     if (canAdjustPrice && adjustDownCount < 2) {
-      setPriceAdjustment(prev => prev - 5);
+      const currentPrice = parseFloat(offerPrice) + priceAdjustment;
+      const newPrice = Math.round((currentPrice - 5) * 100) / 100;
+      const newAdjustment = newPrice - parseFloat(offerPrice);
+      setPriceAdjustment(newAdjustment);
       setAdjustDownCount(prev => prev + 1);
       if (adjustUpCount > 0) setAdjustUpCount(0); // Reset up count if going down
     }
@@ -279,7 +285,7 @@ const PassengerHomeScreen = () => {
         dropOffLocation: destinationLocation,
         dropOffLat: dropOffLat,
         dropOffLng: dropOffLng,
-        offerPrice: parseFloat(offerPrice),
+        offerPrice: Math.round((parseFloat(offerPrice) + priceAdjustment) * 100) / 100, // Use adjusted price with proper rounding
       };
 
       console.log('Creating ride with data:', {
@@ -306,7 +312,7 @@ const PassengerHomeScreen = () => {
               rideId: ride._id,
               from: pickupLocation,
               to: destinationLocation,
-              fare: offerPrice,
+              fare: (Math.round((parseFloat(offerPrice) + priceAdjustment) * 100) / 100).toFixed(2),
               vehicle: selectedVehicleType.name,
             },
           });
@@ -340,7 +346,7 @@ const PassengerHomeScreen = () => {
                   driverName: localDriverName,
                   from: pickupLocation,
                   to: destinationLocation,
-                  fare: offerPrice,
+                  fare: (Math.round((parseFloat(offerPrice) + priceAdjustment) * 100) / 100).toFixed(2),
                   vehicle: selectedVehicleType?.name || 'Ride',
                 },
               })
@@ -361,18 +367,18 @@ const PassengerHomeScreen = () => {
   }
 
   const openRideTracking = () => {
-    router.push({
-      pathname: "../(common)/rideTracker",
-      params: {
-        driverName: localDriverName,
-        from: pickupLocation,
-        to: destinationLocation,
-        fare: offerPrice,
-        vehicle: selectedVehicleType?.name || 'Ride',
-        rideInProgress: localRideInProgress.toString(),
-        progress: progress.toString(),
-      },
-    })
+          router.push({
+        pathname: "../(common)/rideTracker",
+        params: {
+          driverName: localDriverName,
+          from: pickupLocation,
+          to: destinationLocation,
+          fare: (Math.round((parseFloat(offerPrice) + priceAdjustment) * 100) / 100).toFixed(2),
+          vehicle: selectedVehicleType?.name || 'Ride',
+          rideInProgress: localRideInProgress.toString(),
+          progress: progress.toString(),
+        },
+      })
   }
 
   const KATHMANDU_BOUNDING_BOX = {
@@ -597,10 +603,9 @@ const PassengerHomeScreen = () => {
             </View>
 
             <View style={styles.inputRow}>
-              {/* --- IMPROVED PRICE ADJUSTMENT UI: Rs inside pill, unified row --- */}
               <View style={{ flex: 1, alignItems: 'center' }}>
                 <View style={styles.priceAdjustRow}>
-                  <TouchableOpacity
+              <TouchableOpacity 
                     style={[styles.adjustButton, { opacity: canAdjustPrice && adjustDownCount < 2 ? 1 : 0.5 }]}
                     onPress={handleAdjustDown}
                     disabled={!canAdjustPrice || adjustDownCount >= 2}
@@ -609,7 +614,7 @@ const PassengerHomeScreen = () => {
                   </TouchableOpacity>
                   <View style={styles.pricePill}>
                     <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#333', textAlign: 'center' }}>
-                      ₹ {offerPrice ? (parseFloat(offerPrice) + priceAdjustment) : '--'}
+                      ₹ {offerPrice ? (Math.round((parseFloat(offerPrice) + priceAdjustment) * 100) / 100).toFixed(2) : '--'}
                     </Text>
                   </View>
                   <TouchableOpacity

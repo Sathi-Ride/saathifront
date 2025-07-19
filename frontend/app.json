@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "Saathi",
+    "slug": "Saathi",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "Saathi",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -46,7 +46,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "imageWidth": 100,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
@@ -65,7 +65,18 @@
       "router": {},
       "eas": {
         "projectId": "f9a54f7e-1f52-4ebf-8463-421f4fe29ff3"
-      }
+      },
+      "API_URL": "http://192.168.1.71:9000/api/v1",
+      "WEBSOCKET_URL": "http://192.168.1.71:9000",
+      "PUBLIC_ASSET_URL": "http://192.168.1.71:9000",
+      "DEFAULT_BASE_URL": "http://localhost:3000",
+      "GOOGLE_MAPS_API_KEY": "AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg",
+      "SUPPORT_PHONE": "+977980010100",
+      "SUPPORT_EMAIL": "support@saathiapp.com",
+      "FACEBOOK_URL": "https://www.facebook.com/saathiapp",
+      "INSTAGRAM_URL": "https://www.instagram.com/saathiapp",
+      "TWITTER_URL": "https://twitter.com/saathiapp",
+      "WEBSITE_URL": "https://www.saathiapp.com"
     }
   }
 }

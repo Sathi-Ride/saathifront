@@ -3,24 +3,33 @@
 import { View, Text, TouchableOpacity, StyleSheet, Linking, SafeAreaView, StatusBar, ScrollView } from "react-native"
 import Icon from "react-native-vector-icons/MaterialIcons"
 import { useRouter } from "expo-router"
+import Constants from 'expo-constants';
+
+const SUPPORT_PHONE = Constants.expoConfig?.extra?.SUPPORT_PHONE;
+const SUPPORT_EMAIL = Constants.expoConfig?.extra?.SUPPORT_EMAIL;
+const FACEBOOK_URL = Constants.expoConfig?.extra?.FACEBOOK_URL;
+const INSTAGRAM_URL = Constants.expoConfig?.extra?.INSTAGRAM_URL;
+const TWITTER_URL = Constants.expoConfig?.extra?.TWITTER_URL;
+const WEBSITE_URL = Constants.expoConfig?.extra?.WEBSITE_URL;
 
 export default function Support() {
   const router = useRouter()
+  const appVersion = Constants.expoConfig?.version || '1.0.0';
 
   const handleLinkPress = (url: string) => {
     Linking.openURL(url)
   }
 
   const handleCallSupport = () => {
-    Linking.openURL("tel:+97798000000") // Replace with actual support number
+    Linking.openURL(`tel:${SUPPORT_PHONE}`)
   }
 
   const socialLinks = {
-    facebook: "https://www.facebook.com/saathiapp", // Replace with actual URL
-    instagram: "https://www.instagram.com/saathiapp", // Replace with actual URL
-    gmail: "mailto:support@saathiapp.com", // Replace with actual email
-    twitter: "https://twitter.com/saathiapp", // Replace with actual URL
-    website: "https://www.saathiapp.com", // Replace with actual website
+    facebook: FACEBOOK_URL,
+    instagram: INSTAGRAM_URL,
+    gmail: `mailto:${SUPPORT_EMAIL}`,
+    twitter: TWITTER_URL,
+    website: WEBSITE_URL,
   }
 
   const supportOptions = [
@@ -154,7 +163,7 @@ export default function Support() {
           <Text style={styles.appInfoTitle}>App Information</Text>
           <View style={styles.appInfoRow}>
             <Text style={styles.appInfoLabel}>Version:</Text>
-            <Text style={styles.appInfoValue}>1.0.0</Text>
+            <Text style={styles.appInfoValue}>{appVersion}</Text>
           </View>
           <View style={styles.appInfoRow}>
             <Text style={styles.appInfoLabel}>Build:</Text>

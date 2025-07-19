@@ -214,7 +214,7 @@ const RideHistoryScreen = () => {
                 {ride.status === "cancelled" && <Text style={styles.cancelledText}>Ride cancelled</Text>}
               </View>
               <View style={styles.rideFare}>
-                <Text style={styles.fareText}>Rs. {ride.offerPrice || 0}</Text>
+                <Text style={styles.fareText}>Rs. {(ride.offerPrice || 0).toFixed(2)}</Text>
                 <Icon name="chevron-right" size={24} color="#666" />
               </View>
             </TouchableOpacity>

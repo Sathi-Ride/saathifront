@@ -1817,32 +1817,33 @@ const RideTrackerScreen = () => {
     }
   };
 
-  const handleCallOtherUser = async () => {
-    try {
-      const phone = userRole === 'driver' ? rideDetails?.passenger?.mobile : rideDetails?.driver?.mobile;
-      const phoneNumber = `tel:${phone || '9801020304'}`;
-      console.log('[handleCallOtherUser] Calling:', phoneNumber);
-      const canOpen = await Linking.canOpenURL(phoneNumber);
-      if (canOpen) {
-        await Linking.openURL(phoneNumber);
-      } else {
-        console.error('[handleCallOtherUser] Cannot open phone app');
-        showToast('Cannot open phone app', 'error');
-      }
-    } catch (error) {
-      console.error('[handleCallOtherUser] Error:', error);
-      showToast('Error opening phone app', 'error');
+  const handleCallOtherUser = () => {
+    const phone = userRole === 'driver' ? rideDetails?.passenger?.mobile : rideDetails?.driver?.mobile;
+    if (!phone) {
+      showToast('Phone number not available', 'error');
+      return;
     }
+    Linking.openURL(`tel:${phone}`);
   };
 
   const handleMessageOtherUser = () => {
     console.log('[handleMessageOtherUser] Navigating to messaging');
+    
+    // Get actual names from rideDetails instead of params
+    const actualDriverName = rideDetails?.driver?.firstName && rideDetails?.driver?.lastName 
+      ? `${rideDetails.driver.firstName} ${rideDetails.driver.lastName}`
+      : (rideDetails?.driver?.firstName || 'Driver');
+    
+    const actualPassengerName = rideDetails?.passenger?.firstName && rideDetails?.passenger?.lastName
+      ? `${rideDetails.passenger.firstName} ${rideDetails.passenger.lastName}`
+      : (rideDetails?.passenger?.firstName || 'Passenger');
+    
     router.push({
       pathname: '/(common)/messaging',
       params: {
         rideId,
-        driverName: userRole === 'driver' ? 'You' : driverName,
-        passengerName: userRole === 'passenger' ? 'You' : passengerName,
+        driverName: userRole === 'driver' ? 'You' : actualDriverName,
+        passengerName: userRole === 'passenger' ? 'You' : actualPassengerName,
         driverPhone: rideDetails?.driver?.mobile || '9815364055',
         passengerPhone: rideDetails?.passenger?.mobile || '9801020304',
         userRole,

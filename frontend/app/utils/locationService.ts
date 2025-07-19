@@ -1,7 +1,8 @@
 import * as Location from 'expo-location';
 import apiClient from './apiClient';
+import Constants from 'expo-constants';
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg';
+const GOOGLE_MAPS_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY || 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg';
 
 export interface LocationData {
   latitude: number;
@@ -715,7 +716,7 @@ class LocationService {
       
       // Try the new Places API first
       // TODO: Replace with your new API key from Google Cloud Console
-      const apiKey = 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg'; // Your frontend API key
+      const apiKey = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY || 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg'; // Your frontend API key
       const url = `https://places.googleapis.com/v1/places:autocomplete?key=${apiKey}`;
       
       const requestBody = {
@@ -786,7 +787,7 @@ class LocationService {
   // Fallback to legacy Places API
   private async searchPlacesWithLegacyAPI(query: string, boundingBox?: BoundingBox): Promise<GoogleMapsPlace[]> {
     try {
-      const apiKey = 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg';
+      const apiKey = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY || 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg';
       const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&key=${apiKey}&types=geocode&components=country:np`;
       
       const response = await fetch(url);
@@ -837,7 +838,7 @@ class LocationService {
   // Get place details with coordinates
   async getPlaceDetails(placeId: string, boundingBox?: BoundingBox): Promise<GoogleMapsPlace | null> {
     try {
-      const apiKey = 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg';
+      const apiKey = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY || 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg';
       
       // Try new Places API first
       const url = `https://places.googleapis.com/v1/places/${placeId}?key=${apiKey}`;
@@ -890,7 +891,7 @@ class LocationService {
   // Fallback to legacy Places API for details
   private async getPlaceDetailsLegacy(placeId: string, boundingBox?: BoundingBox): Promise<GoogleMapsPlace | null> {
     try {
-      const apiKey = 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg';
+      const apiKey = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY || 'AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg';
       const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry,name,formatted_address&key=${apiKey}`;
       
       const response = await fetch(url);

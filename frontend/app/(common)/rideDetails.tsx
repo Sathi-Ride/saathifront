@@ -610,7 +610,7 @@ const RideDetailsScreen = () => {
                 longitude: locations.pickupLng,
               }}
               title="Pickup"
-              pinColor="#075B5E"
+              pinColor="#2196F3"
             />
             {/* Dropoff Marker */}
             <Marker
@@ -619,7 +619,7 @@ const RideDetailsScreen = () => {
                 longitude: locations.dropoffLng,
               }}
               title="Dropoff"
-              pinColor="#EA2F14"
+              pinColor="#4CAF50"
             />
             {/* Route Polyline */}
             {routePolyline.length > 0 && (
@@ -734,7 +734,7 @@ const RideDetailsScreen = () => {
 
           <View style={styles.paymentRow}>
             <Text style={styles.paymentLabel}>Fare</Text>
-            <Text style={styles.paymentAmount}>Rs. {fare.toFixed(2)}</Text>
+            <Text style={styles.paymentAmount}>Rs. {getFare().toFixed(2)}</Text>
           </View>
 
         </View>
@@ -840,14 +840,14 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: "#075B5E",
+    backgroundColor: "#2196F3",
     marginRight: 12,
   },
   greenDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: "#EA2F14",
+    backgroundColor: "#4CAF50",
     marginRight: 12,
   },
   locationInfo: {

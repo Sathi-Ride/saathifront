@@ -396,7 +396,7 @@ const DriverSection = () => {
             {item.passenger ? item.passenger.firstName : ''} {item.passenger ? item.passenger.lastName : ''}
           </Text>
         </View>
-        <Text style={styles.ridePrice}>₹{item.offerPrice}</Text>
+        <Text style={styles.ridePrice}>₹{item.offerPrice.toFixed(2)}</Text>
       </View>
       
       <View style={styles.rideDetails}>
@@ -578,7 +578,7 @@ const DriverSection = () => {
                       longitude: currentLocation.lng + (index * 0.001),
                     }}
                     title={`${ride.passenger ? ride.passenger.firstName : ''} ${ride.passenger ? ride.passenger.lastName : ''}`}
-                    description={`₹${ride.offerPrice}`}
+                    description={`₹${ride.offerPrice.toFixed(2)}`}
                   >
                     <View style={styles.rideMarker}>
                       <MaterialIcons 
@@ -668,7 +668,7 @@ const DriverSection = () => {
               </Text>
               <Text style={styles.currentRideText}>From: {currentRide.pickUpLocation}</Text>
               <Text style={styles.currentRideText}>To: {currentRide.dropOffLocation}</Text>
-              <Text style={styles.currentRideText}>Fare: ₹{currentRide.offerPrice}</Text>
+              <Text style={styles.currentRideText}>Fare: ₹{currentRide.offerPrice.toFixed(2)}</Text>
               <View style={styles.currentRideActions}>
                 <TouchableOpacity style={styles.startButton} onPress={handleStartRide}>
                   <Text style={styles.startButtonText}>Start Ride</Text>
