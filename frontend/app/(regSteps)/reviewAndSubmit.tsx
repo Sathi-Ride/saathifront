@@ -9,8 +9,10 @@ import apiClient from '../utils/apiClient';
 import { userRoleManager } from '../utils/userRoleManager';
 import Toast from '../../components/ui/Toast';
 import ConfirmationModal from '../../components/ui/ConfirmationModal';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const ReviewAndSubmit = () => {
+  const insets = useSafeAreaInsets();
   const { registrationData } = useDriverRegistration();
   const [loading, setLoading] = useState(false);
   const [showBackConfirmation, setShowBackConfirmation] = useState(false);
@@ -215,7 +217,11 @@ const ReviewAndSubmit = () => {
           { label: 'Billbook Number', value: registrationData.billbookNumber, key: 'billbookNumber' },
         ], '/(vehDetails)/vBrand')}
 
-        <TouchableOpacity style={[styles.submitButton, loading && styles.submitButtonDisabled, { marginBottom: 10, marginTop: 10 }]} onPress={handleSubmit} disabled={loading}>
+        <TouchableOpacity style={[
+          styles.submitButton,
+          loading && styles.submitButtonDisabled,
+          { marginBottom: insets.bottom + 40, marginTop: 10 }
+        ]} onPress={handleSubmit} disabled={loading}>
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Submit Registration</Text>}
         </TouchableOpacity>
       </ScrollView>
