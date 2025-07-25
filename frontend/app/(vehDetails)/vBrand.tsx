@@ -8,9 +8,10 @@ import ConfirmationModal from '../../components/ui/ConfirmationModal';
 const Brand = () => {
   const router = useRouter();
   const { registrationData, updateRegistrationData } = useDriverRegistration();
-  const [brand, setBrand] = useState(registrationData.vehicleBrand || '');
+  const [brand, setBrand] = useState(registrationData.vehicleBrand || registrationData.vehicleMake || '');
   const [model, setModel] = useState(registrationData.vehicleModel || '');
   const [year, setYear] = useState(registrationData.vehicleYear || '');
+  const [color, setColor] = useState(registrationData.vehicleColor || '');
   const [loading, setLoading] = useState(false);
   const [showBackConfirmation, setShowBackConfirmation] = useState(false);
 
@@ -32,7 +33,7 @@ const Brand = () => {
   };
 
   const handleSave = async () => {
-    if (!brand.trim() || !model.trim() || !year.trim()) {
+    if (!brand.trim() || !model.trim() || !year.trim() || !color.trim()) {
       return;
     }
 
@@ -43,11 +44,13 @@ const Brand = () => {
       
       updateRegistrationData({
         vehicleBrand: brand,
+        vehicleMake: brand, // ensure backend receives vehicleMake
         vehicleModel: model,
         vehicleYear: year,
+        vehicleColor: color,
       });
       
-      router.back();
+      router.push('/(vehDetails)/regPlate');
     } catch (error) {
       // Handle error
     } finally {
@@ -55,7 +58,7 @@ const Brand = () => {
     }
   };
 
-  const isFormValid = brand.trim() && model.trim() && year.trim();
+  const isFormValid = brand.trim() && model.trim() && year.trim() && color.trim();
 
   return (
     <View style={styles.container}>
@@ -104,6 +107,16 @@ const Brand = () => {
                 onChangeText={setYear}
                 placeholder="e.g., 2020"
                 keyboardType="numeric"
+                editable={!loading}
+              />
+            </View>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Color</Text>
+              <TextInput
+                style={[styles.input, loading && styles.inputDisabled]}
+                value={color}
+                onChangeText={setColor}
+                placeholder="e.g., Red, Blue, Black"
                 editable={!loading}
               />
             </View>

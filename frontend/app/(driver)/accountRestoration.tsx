@@ -2,12 +2,14 @@ import React, { useState, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, StatusBar, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
-import apiClient from '../utils/apiClient';
+import apiClient, { setAccessToken, initializeApiClient } from '../utils/apiClient';
+import webSocketService from '../utils/websocketService';
 import ConfirmationModal from '../../components/ui/ConfirmationModal';
 import AppModal from '../../components/ui/AppModal';
 import Toast from '../../components/ui/Toast';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { userRoleManager } from '../utils/userRoleManager';
 
 const CODE_LENGTH = 6;
 
@@ -15,6 +17,7 @@ const AccountRestoration = () => {
   const router = useRouter();
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [currentUserMobile, setCurrentUserMobile] = useState<string | null>(null);
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [accessToken, setAccessToken] = useState('');
@@ -67,17 +70,48 @@ const AccountRestoration = () => {
     setShowBackConfirmation(false);
   };
 
+  // On mount, fetch the current user's mobile from /me
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiClient.get('me');
+        setCurrentUserMobile(res.data.data?.mobile || null);
+      } catch (err) {
+        setCurrentUserMobile(null);
+      }
+    })();
+  }, []);
+
   const handleSendOtp = async () => {
     if (!phoneNumber.trim()) {
       showToast('Please enter a phone number', 'error');
+      return;
+    }
+    if (currentUserMobile && phoneNumber !== currentUserMobile) {
+      showToast('You can only restore your own account.', 'error');
       return;
     }
     setLoading(true);
     try {
       const response = await apiClient.post('auth/login', { mobile: phoneNumber });
       if (response.data.statusCode === 201 || response.data.statusCode === 200) {
-        setStep('otp');
-        showToast('OTP sent successfully!', 'success');
+        // Check if this user has a driver profile
+        try {
+          const profileRes = await apiClient.get('me', { headers: { Authorization: `Bearer ${response.data.data.accessToken}` } });
+          const userData = profileRes.data.data;
+          const hasDriverProfile = !!userData?.driverProfile || (userData?.role === 'driver' && userData?.vehicles && userData.vehicles.length > 0);
+          if (!hasDriverProfile) {
+            showToast('No vehicle registered for this account.', 'error');
+            setLoading(false);
+            return;
+          }
+          setStep('otp');
+          showToast('OTP sent successfully!', 'success');
+        } catch (profileErr) {
+          showToast('No vehicle registered for this account.', 'error');
+          setLoading(false);
+          return;
+        }
       } else {
         showModal('error', 'Error', 'No user exists with this phone number. Please register a vehicle.', 'Register Vehicle', () => router.push('/registerVehicle'));
       }
@@ -97,10 +131,21 @@ const AccountRestoration = () => {
     try {
       const response = await apiClient.post('auth/verify-otp', { mobile: phoneNumber, otp });
       if (response.data.statusCode === 201) {
-        setAccessToken(response.data.data.accessToken);
-        await AsyncStorage.setItem('userRole', 'driver');
+        await setAccessToken(response.data.data.accessToken);
+        await initializeApiClient();
+        await webSocketService.reconnectAllWithNewToken();
+        // Fetch user profile to determine role
+        const profileRes = await apiClient.get('me');
+        const userData = profileRes.data.data;
+        const hasDriverProfile = !!userData?.driverProfile || (userData?.role === 'driver' && userData?.vehicles && userData.vehicles.length > 0);
+        await AsyncStorage.setItem('userRole', hasDriverProfile ? 'driver' : 'passenger');
+        if (hasDriverProfile) {
+          await userRoleManager.setRole('driver');
+        } else {
+          await userRoleManager.setRole('passenger');
+        }
         showToast('Account restored successfully!', 'success');
-        setTimeout(() => router.push('/(driver)'), 1500);
+        setTimeout(() => router.push(hasDriverProfile ? '/(driver)' : '/(tabs)'), 1500);
       } else {
         showToast('Invalid OTP. Please try again.', 'error');
       }

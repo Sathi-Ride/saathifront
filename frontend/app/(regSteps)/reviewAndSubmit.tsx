@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useDriverRegistration } from '../DriverRegistrationContext';
@@ -59,9 +61,7 @@ const ReviewAndSubmit = () => {
       'vehicleType', 'vehicleRegNum', 'vehicleMake', 'vehicleModel',
       'vehicleYear', 'vehicleColor', 'billbookNumber'
     ];
-    
     const missingFields = requiredFields.filter(field => !registrationData[field]);
-    
     if (missingFields.length > 0) {
       showToast(`Please complete the following fields: ${missingFields.join(', ')}`, 'error');
       return;
@@ -69,53 +69,35 @@ const ReviewAndSubmit = () => {
 
     setLoading(true);
     try {
-      // Helper function to convert file URI to base64
-      const convertImageToBase64 = async (imageUri: string): Promise<string> => {
-        if (imageUri.startsWith('data:')) {
-          // Already base64
-          return imageUri;
-        } else if (imageUri.startsWith('file://') || imageUri.startsWith('content://')) {
-          try {
-            // Convert file URI to base64
-            const response = await fetch(imageUri);
-            const blob = await response.blob();
-            return new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => {
-                const base64 = reader.result as string;
-                resolve(base64);
-              };
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
-            });
-          } catch (error) {
-            throw new Error(`Failed to convert image: ${imageUri}`);
-          }
-        } else {
-          // Assume it's already a base64 string
-          return imageUri;
-        }
+      // Helper function to upload image and return backend file path
+      const uploadImageIfNeeded = async (imageUri: string | undefined | null): Promise<string | undefined> => {
+        if (!imageUri) return undefined;
+        // If already a backend path or URL, return as is
+        if (imageUri.startsWith('/uploads/') || imageUri.startsWith('http')) return imageUri;
+        // Otherwise, upload
+        const data = new FormData();
+        data.append('file', {
+          uri: imageUri,
+          name: imageUri.split('/').pop() || 'photo.jpg',
+          type: 'image/jpeg',
+        } as any);
+        const response = await apiClient.post('/uploads/private', data, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return response.data.data; // backend returns file path
       };
 
-      // Convert all images to base64
-      const imageFields = [
-        'citizenshipDocFrontImgPath',
-        'citizenshipDocBackImgPath',
-        'licenseFrontImgPath',
-        'vehiclePhoto',
-        'blueBookFrontImgPath',
-        'blueBookBackImgPath'
-      ];
+      // Upload all images and get their backend paths
+      const profileImage = await uploadImageIfNeeded(registrationData.profileImage);
+      const selfiePhoto = await uploadImageIfNeeded(registrationData.selfiePhoto);
+      const licenseFrontImgPath = await uploadImageIfNeeded(registrationData.licenseFrontImgPath);
+      const citizenshipDocFrontImgPath = await uploadImageIfNeeded(registrationData.citizenshipDocFrontImgPath);
+      const citizenshipDocBackImgPath = await uploadImageIfNeeded(registrationData.citizenshipDocBackImgPath);
+      const vehiclePhoto = await uploadImageIfNeeded(registrationData.vehiclePhoto);
+      const blueBookFrontImgPath = await uploadImageIfNeeded(registrationData.blueBookFrontImgPath);
+      const blueBookBackImgPath = await uploadImageIfNeeded(registrationData.blueBookBackImgPath);
 
-      const convertedImages: { [key: string]: string } = {};
-      
-      for (const field of imageFields) {
-        if (registrationData[field]) {
-          convertedImages[field] = await convertImageToBase64(registrationData[field]);
-        }
-      }
-
-      // Prepare JSON payload matching Postman format
+      // Prepare JSON payload matching backend expectations
       const payload = {
         citizenship: String(registrationData.citizenship || ''),
         citizenshipNumber: String(registrationData.citizenshipNumber || ''),
@@ -125,40 +107,40 @@ const ReviewAndSubmit = () => {
         vehicleRegNum: String(registrationData.vehicleRegNum || ''),
         vehicleMake: String(registrationData.vehicleMake || ''),
         vehicleModel: String(registrationData.vehicleModel || ''),
-        vehicleYear: parseInt(registrationData.vehicleYear) || 2020,
+        vehicleYear: Number(registrationData.vehicleYear) || 2020,
         vehicleColor: String(registrationData.vehicleColor || ''),
         billbookNumber: String(registrationData.billbookNumber || ''),
-        ...convertedImages
+        profileImage,
+        selfiePhoto,
+        licenseFrontImgPath,
+        citizenshipDocFrontImgPath,
+        citizenshipDocBackImgPath,
+        vehiclePhoto,
+        blueBookFrontImgPath,
+        blueBookBackImgPath,
       };
 
-      // Send JSON request instead of FormData
       const response = await apiClient.post('/driver-profile', payload, {
         headers: {
           'Content-Type': 'application/json',
         },
       });
 
-      // Set user role to driver and navigate to home screen
       await userRoleManager.setRole('driver');
-      
       showToast('Driver profile created successfully! 🎉', 'success');
-      
-      // Navigate to driver home screen after a short delay to show the success toast
       setTimeout(() => {
         router.replace('/(driver)?registrationComplete=true');
       }, 1500);
-
     } catch (err: any) {
       let errorMessage = 'Failed to submit driver profile.';
       if (err.response?.data?.message) {
-        const messages = Array.isArray(err.response.data.message) 
+        const messages = Array.isArray(err.response.data.message)
           ? err.response.data.message.join(', ')
           : err.response.data.message;
         errorMessage = messages;
       } else if (err.message) {
         errorMessage = err.message;
       }
-      
       showToast(errorMessage, 'error');
     } finally {
       setLoading(false);
@@ -202,60 +184,60 @@ const ReviewAndSubmit = () => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.container}>
-        <ScrollView style={styles.scrollView}>
-          <Text style={styles.title}>Review & Submit</Text>
-
-          {renderSection('Basic Profile', [
-            { label: 'Profile Photo', value: registrationData.profileImage, key: 'profileImage' },
-            { label: 'First Name', value: registrationData.firstName, key: 'firstName' },
-            { label: 'Last Name', value: registrationData.lastName, key: 'lastName' },
-            { label: 'Email', value: registrationData.email, key: 'email' },
-            { label: 'City', value: registrationData.city, key: 'city' },
-          ], '/(regSteps)/basicProfile')}
-
-          {renderSection('License and ID', [
-            { label: 'Driver License', value: registrationData.licenseFrontImgPath, key: 'licenseFrontImgPath' },
-            { label: 'National ID', value: registrationData.citizenshipDocFrontImgPath, key: 'citizenshipDocFrontImgPath' },
-          ], '/(regSteps)/driverLicense')}
-          
-          {renderSection('Selfie', [
-            { label: 'Selfie with ID', value: registrationData.selfiePhoto, key: 'selfiePhoto' },
-          ], '/(regSteps)/registerSelfie')}
-
-          {renderSection('Vehicle Information', [
-            { label: 'Brand', value: registrationData.vehicleMake, key: 'vehicleMake' },
-            { label: 'Registration Plate', value: registrationData.vehicleRegNum, key: 'vehicleRegNum' },
-            { label: 'Vehicle Photo', value: registrationData.vehiclePhoto, key: 'vehiclePhoto' },
-            { label: 'Billbook Front', value: registrationData.blueBookFrontImgPath, key: 'blueBookFrontImgPath' },
-            { label: 'Billbook Back', value: registrationData.blueBookBackImgPath, key: 'blueBookBackImgPath' },
-            { label: 'Billbook Number', value: registrationData.billbookNumber, key: 'billbookNumber' },
-          ], '/(vehDetails)/vBrand')}
-
-          <TouchableOpacity style={[styles.submitButton, loading && styles.submitButtonDisabled]} onPress={handleSubmit} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Submit Registration</Text>}
-          </TouchableOpacity>
-        </ScrollView>
-
-        <Toast
-          visible={toast.visible}
-          message={toast.message}
-          type={toast.type}
-          onHide={hideToast}
-          duration={4000}
-        />
-
-        <ConfirmationModal
-          visible={showBackConfirmation}
-          title="Cancel Submission?"
-          message="You are currently submitting your registration. Are you sure you want to cancel this process?"
-          confirmText="Cancel"
-          cancelText="Continue"
-          onConfirm={handleConfirmBack}
-          onCancel={handleCancelBack}
-          type="warning"
-        />
+      <View style={{ paddingTop: 26, paddingBottom: 10, backgroundColor: '#fff', zIndex: 2 }}>
+        <Text style={styles.title}>Review & Submit</Text>
       </View>
+      <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingTop: 0 }}>
+        {renderSection('Basic Profile', [
+          { label: 'Profile Photo', value: registrationData.profileImage, key: 'profileImage' },
+          { label: 'First Name', value: registrationData.firstName, key: 'firstName' },
+          { label: 'Last Name', value: registrationData.lastName, key: 'lastName' },
+          { label: 'Email', value: registrationData.email, key: 'email' },
+          { label: 'City', value: registrationData.city, key: 'city' },
+        ], '/(regSteps)/basicProfile')}
+
+        {renderSection('License and ID', [
+          { label: 'Driver License', value: registrationData.licenseFrontImgPath, key: 'licenseFrontImgPath' },
+          { label: 'National ID', value: registrationData.citizenshipDocFrontImgPath, key: 'citizenshipDocFrontImgPath' },
+        ], '/(regSteps)/driverLicense')}
+        
+        {renderSection('Selfie', [
+          { label: 'Selfie with ID', value: registrationData.selfiePhoto, key: 'selfiePhoto' },
+        ], '/(regSteps)/registerSelfie')}
+
+        {renderSection('Vehicle Information', [
+          { label: 'Brand', value: registrationData.vehicleBrand || registrationData.vehicleMake, key: 'vehicleBrand' },
+          { label: 'Color', value: registrationData.vehicleColor, key: 'vehicleColor' },
+          { label: 'Registration Plate', value: registrationData.vehicleRegNum, key: 'vehicleRegNum' },
+          { label: 'Vehicle Photo', value: registrationData.vehiclePhoto, key: 'vehiclePhoto' },
+          { label: 'Billbook Front', value: registrationData.blueBookFrontImgPath, key: 'blueBookFrontImgPath' },
+          { label: 'Billbook Back', value: registrationData.blueBookBackImgPath, key: 'blueBookBackImgPath' },
+          { label: 'Billbook Number', value: registrationData.billbookNumber, key: 'billbookNumber' },
+        ], '/(vehDetails)/vBrand')}
+
+        <TouchableOpacity style={[styles.submitButton, loading && styles.submitButtonDisabled, { marginBottom: 10, marginTop: 10 }]} onPress={handleSubmit} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Submit Registration</Text>}
+        </TouchableOpacity>
+      </ScrollView>
+
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={hideToast}
+        duration={4000}
+      />
+
+      <ConfirmationModal
+        visible={showBackConfirmation}
+        title="Cancel Submission?"
+        message="You are currently submitting your registration. Are you sure you want to cancel this process?"
+        confirmText="Cancel"
+        cancelText="Continue"
+        onConfirm={handleConfirmBack}
+        onCancel={handleCancelBack}
+        type="warning"
+      />
     </View>
   );
 };
@@ -275,6 +257,7 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 20,
     textAlign: 'center',
+    marginTop: 26,
   },
   section: {
     marginBottom: 25,

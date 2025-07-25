@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, StatusBar } from 'react-nativ
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import websocketService from '../utils/websocketService';
+import apiClient from '../utils/apiClient';
 import Toast from '../../components/ui/Toast';
 
 const Notifications = () => {
@@ -25,7 +26,15 @@ const Notifications = () => {
     let rideCompletedListener: any;
     async function setupWebSocket() {
       try {
-        await websocketService.connect();
+        // Fetch user profile to check for driver profile
+        const response = await apiClient.get('me');
+        const userData = response.data.data;
+        const hasDriverProfile = !!userData?.driverProfile;
+        if (hasDriverProfile) {
+          await websocketService.connect(undefined, 'driver');
+        } else {
+          await websocketService.connect(undefined, 'passenger');
+        }
         rideCompletedListener = (data: any) => {
           if (isMounted) setNotifications(prev => [{ type: 'rideCompleted', ...data, createdAt: new Date() }, ...prev]);
         };

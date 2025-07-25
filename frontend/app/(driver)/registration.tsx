@@ -70,11 +70,6 @@ const Registration = () => {
               <View style={styles.stepContent}>
                 <Text style={styles.stepName}>{step.name}</Text>
                 <View style={styles.stepActions}>
-                  {step.completed && (
-                    <View style={styles.checkIcon}>
-                      <Check size={16} color="#4CAF50" />
-                    </View>
-                  )}
                   <ChevronRight size={20} color="#4CAF50" />
                 </View>
               </View>
@@ -137,15 +132,6 @@ const styles = StyleSheet.create({
   },
   stepName: { fontSize: 16, color: '#333', fontWeight: '500' },
   stepActions: { flexDirection: 'row', alignItems: 'center' },
-  checkIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#E8F5E8',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
   doneButton: {
     backgroundColor: '#075B5E',
     borderRadius: 25,

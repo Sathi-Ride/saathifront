@@ -131,6 +131,7 @@ const ProfileSettingsScreen = () => {
           underlineColor="transparent"
           activeUnderlineColor="transparent"
           editable={!loading}
+          cursorColor="#075B5E"
         />
         <TextInput
           mode="flat"
@@ -142,6 +143,7 @@ const ProfileSettingsScreen = () => {
           underlineColor="transparent"
           activeUnderlineColor="transparent"
           editable={!loading}
+          cursorColor="#075B5E"
         />
         <TextInput
           mode="flat"
@@ -155,6 +157,7 @@ const ProfileSettingsScreen = () => {
           underlineColor="transparent"
           activeUnderlineColor="transparent"
           editable={!loading}
+          cursorColor="#075B5E"
         />
         <TextInput
             mode="flat"
@@ -166,6 +169,7 @@ const ProfileSettingsScreen = () => {
             placeholderTextColor={'#ccc'}
             activeUnderlineColor="transparent"
             editable={!loading}
+            cursorColor="#075B5E"
         />
       </View>
       <TouchableOpacity style={[styles.saveButton, loading && styles.saveButtonDisabled]} onPress={handleSave} disabled={loading}>

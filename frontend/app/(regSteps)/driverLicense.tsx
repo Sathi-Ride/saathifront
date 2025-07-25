@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useDriverRegistration } from '../DriverRegistrationContext';
 import ConfirmationModal from '../../components/ui/ConfirmationModal';
 import AppModal from '../../components/ui/AppModal';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const { width, height } = Dimensions.get('window');
 
@@ -17,6 +18,7 @@ const License = () => {
   const [nationalIdBackPhoto, setNationalIdBackPhoto] = useState<string | null>(registrationData.citizenshipDocBackImgPath || null);
   const [licenseNumber, setLicenseNumber] = useState(registrationData.licenseNum || '');
   const [licenseExpiry, setLicenseExpiry] = useState(registrationData.licenseExpiry || '');
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [citizenship, setCitizenship] = useState(registrationData.citizenship || '');
   const [citizenshipNumber, setCitizenshipNumber] = useState(registrationData.citizenshipNumber || '');
   const [loading, setLoading] = useState(false);
@@ -159,15 +161,35 @@ const License = () => {
             </View>
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>License Expiry Date</Text>
-              <TextInput
-                style={[styles.input, loading && styles.inputDisabled]}
-                value={licenseExpiry}
-                onChangeText={setLicenseExpiry}
-                placeholder="YYYY-MM-DD (e.g., 2025-12-31)"
-                keyboardType="numeric"
-                editable={!loading}
-              />
+              <TouchableOpacity
+                style={[styles.input, loading && styles.inputDisabled, { justifyContent: 'center' }]}
+                onPress={() => !loading && setShowDatePicker(true)}
+                activeOpacity={0.7}
+                disabled={loading}
+              >
+                <Text style={{ color: licenseExpiry ? '#000' : '#ccc', fontSize: 16 }}>
+                  {licenseExpiry ? licenseExpiry : 'YYYY-MM-DD (e.g., 2025-12-31)'}
+                </Text>
+              </TouchableOpacity>
               <Text style={styles.inputHint}>Format: YYYY-MM-DD</Text>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={licenseExpiry ? new Date(licenseExpiry) : new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(event, selectedDate) => {
+                    setShowDatePicker(false);
+                    if (selectedDate) {
+                      // Format as YYYY-MM-DD
+                      const yyyy = selectedDate.getFullYear();
+                      const mm = String(selectedDate.getMonth() + 1).padStart(2, '0');
+                      const dd = String(selectedDate.getDate()).padStart(2, '0');
+                      setLicenseExpiry(`${yyyy}-${mm}-${dd}`);
+                    }
+                  }}
+                  minimumDate={new Date()}
+                />
+              )}
             </View>
           </View>
 

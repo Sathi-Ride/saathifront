@@ -109,7 +109,7 @@ const Toast: React.FC<ToastProps> = ({
       <View style={styles.content}>
         <Ionicons 
           name={toastStyle.icon as any} 
-          size={18} 
+          size={20} 
           color={toastStyle.iconColor} 
         />
         <Text style={styles.message}>{message}</Text>
@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
   message: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '400',
     marginLeft: 8,
     flex: 1,
   },
