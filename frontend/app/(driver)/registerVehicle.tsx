@@ -137,7 +137,7 @@ const ChooseVehicle = () => {
                     <Text style={styles.vehicleDescription}>{vehicle.description}</Text>
                   )}
                   {vehicle.basePrice && (
-                    <Text style={styles.vehiclePrice}>Base: ₹{vehicle.basePrice}</Text>
+                    <Text style={styles.vehiclePrice}>Base: रू{vehicle.basePrice}</Text>
                   )}
                 </View>
               </View>

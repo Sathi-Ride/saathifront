@@ -484,7 +484,7 @@ const DriverSection = () => {
             {item.passenger ? item.passenger.firstName : ''} {item.passenger ? item.passenger.lastName : ''}
           </Text>
         </View>
-        <Text style={styles.ridePrice}>₹{item.offerPrice.toFixed(2)}</Text>
+        <Text style={styles.ridePrice}>रू{item.offerPrice.toFixed(2)}</Text>
       </View>
       
       <View style={styles.rideDetails}>

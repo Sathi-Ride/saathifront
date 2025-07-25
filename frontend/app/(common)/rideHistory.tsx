@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, StatusBar, ActivityIndicator, FlatList } from "react-native"
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, StatusBar, ActivityIndicator, FlatList, SafeAreaView } from "react-native"
 import Icon from "react-native-vector-icons/MaterialIcons"
 import { useRouter } from "expo-router"
 import { useUserRole, userRoleManager } from "../utils/userRoleManager"
@@ -169,20 +169,39 @@ const RideHistoryScreen = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My rides</Text>
-        {/* Show current role */}
-        <View style={styles.roleIndicator}>
-          <Text style={styles.roleText}>{userRole}</Text>
-          <TouchableOpacity onPress={resetToPassenger} style={styles.resetButton}>
-            <Icon name="refresh" size={12} color="#075B5E" />
+      <SafeAreaView>
+        <View style={styles.header} pointerEvents="auto">
+          <TouchableOpacity onPress={handleBackPress} style={[
+            styles.backButton,
+            {
+              backgroundColor: '#075B5E',
+              borderRadius: 20,
+              width: 40,
+              height: 40,
+              justifyContent: 'center',
+              alignItems: 'center',
+              elevation: 3,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.1,
+              shadowRadius: 4,
+              pointerEvents: 'auto',
+              zIndex: 1001,
+            }
+          ]}>
+            <Icon name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
+          <Text style={styles.headerTitle}>My rides</Text>
+          {/* Show current role */}
+          <View style={styles.roleIndicator}>
+            <Text style={styles.roleText}>{userRole}</Text>
+            <TouchableOpacity onPress={resetToPassenger} style={styles.resetButton}>
+              <Icon name="refresh" size={12} color="#075B5E" />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-      <View style={styles.rideList}>
+      </SafeAreaView>
+      <View style={[styles.rideList, { marginTop: 5 }] }>
         <FlatList
           data={rideHistory}
           keyExtractor={(ride, index) => ride._id || index.toString()}
@@ -263,6 +282,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
     marginBottom: 20,
+    zIndex: 1000,
+    position: 'relative',
+    backgroundColor: '#fff',
   },
   headerTitle: {
     fontSize: 20,
@@ -274,6 +296,8 @@ const styles = StyleSheet.create({
   },
   backButton: {
     padding: 8,
+    zIndex: 1001,
+    pointerEvents: 'auto',
   },
   roleIndicator: {
     flexDirection: "row",

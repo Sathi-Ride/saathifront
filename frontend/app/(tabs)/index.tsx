@@ -60,9 +60,9 @@ const PassengerHomeScreen = () => {
 
   // --- STATE FOR PRICE ADJUSTMENT ---
   const [canAdjustPrice, setCanAdjustPrice] = useState(false);
-  const [priceAdjustment, setPriceAdjustment] = useState(0); // -10, -5, 0, +5, +10
-  const [adjustUpCount, setAdjustUpCount] = useState(0); // max 2
-  const [adjustDownCount, setAdjustDownCount] = useState(0); // max 2
+  const [priceAdjustment, setPriceAdjustment] = useState(0); 
+  const [adjustUpCount, setAdjustUpCount] = useState(0);
+  const [adjustDownCount, setAdjustDownCount] = useState(0); 
 
   // Initialize location and vehicle types
   useEffect(() => {
@@ -75,18 +75,75 @@ const PassengerHomeScreen = () => {
       const location = await locationService.getCurrentLocation();
       setCurrentLocation(location);
 
+      // Kathmandu bounding box
+      const KATHMANDU_BOUNDING_BOX = {
+        north: 27.85,
+        south: 27.60,
+        east: 85.55,
+        west: 85.20,
+      };
+      function isInKathmandu(lat: number, lng: number) {
+        return lat >= KATHMANDU_BOUNDING_BOX.south && lat <= KATHMANDU_BOUNDING_BOX.north &&
+          lng >= KATHMANDU_BOUNDING_BOX.west && lng <= KATHMANDU_BOUNDING_BOX.east;
+      }
+
+      // Set pickup location to current location name if in Kathmandu, else default to Kathmandu
+      if (location && isInKathmandu(location.latitude, location.longitude)) {
+        try {
+          const address = await locationService.getAddressFromCoordinates(location.latitude, location.longitude);
+          setPickupLocation(address);
+        } catch {
+          setPickupLocation('Current Location');
+        }
+        setPickupCoords({ lat: location.latitude, lng: location.longitude });
+      } else {
+        setPickupLocation('Kathmandu');
+        setPickupCoords({ lat: 27.7172, lng: 85.324 });
+      }
+
       // Get vehicle types from API
       const types = await rideService.getVehicleTypes();
-      setVehicleTypes(types);
+      console.log('Fetched vehicle types:', types);
+      // Map backend fields to frontend expected fields
+      const mappedTypes = types.map(t => ({
+        ...t,
+        basePrice: (t as any).pricingBase,
+        pricePerKm: (t as any).pricingPerKm,
+      }));
+      // Sort so that 'bike' vehicles come first
+      const sortedTypes = [
+        ...mappedTypes.filter(t => t.name.toLowerCase().includes('bike')),
+        ...mappedTypes.filter(t => !t.name.toLowerCase().includes('bike'))
+      ];
+      setVehicleTypes(sortedTypes);
       
-      if (types.length > 0) {
-        setSelectedVehicleType(types[0]); // Set first vehicle type as default
+      // Set default vehicle type to 'bike' if available, else fallback to first
+      if (sortedTypes.length > 0) {
+        const bikeType = sortedTypes.find(t => t.name.toLowerCase().includes('bike'));
+        setSelectedVehicleType(bikeType || sortedTypes[0]);
       }
 
       // Start location tracking for passenger
       try {
         await locationService.startLocationTracking((newLocation) => {
           setCurrentLocation(newLocation);
+          // Optionally update pickup location if user hasn't changed it
+          setPickupLocation(prev => {
+            if (!prev || prev === '' || prev === 'Current Location' || prev === 'Kathmandu') {
+              if (isInKathmandu(newLocation.latitude, newLocation.longitude)) {
+                locationService.getAddressFromCoordinates(newLocation.latitude, newLocation.longitude)
+                  .then(address => setPickupLocation(address))
+                  .catch(() => setPickupLocation('Current Location'));
+                return prev;
+              } else {
+                setPickupLocation('Kathmandu');
+                setPickupCoords({ lat: 27.7172, lng: 85.324 });
+                return 'Kathmandu';
+              }
+            }
+            return prev;
+          });
+          setPickupCoords({ lat: newLocation.latitude, lng: newLocation.longitude });
         }, {
           accuracy: Location.Accuracy.Balanced,
           timeInterval: 30000,
@@ -141,6 +198,7 @@ const PassengerHomeScreen = () => {
     }
 
     try {
+      console.log('Calculating fare with selectedVehicleType:', selectedVehicleType);
       console.log('Calculating fare with:', {
         pickupLocation,
         destinationLocation,
@@ -462,6 +520,14 @@ const PassengerHomeScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pickupCoords, destinationCoords]);
 
+  // Auto-recalculate fare when vehicle type, pickup, or dropoff changes and all are set
+  useEffect(() => {
+    if (selectedVehicleType && pickupCoords && destinationCoords) {
+      calculateEstimatedFare();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVehicleType, pickupCoords, destinationCoords]);
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
@@ -602,19 +668,19 @@ const PassengerHomeScreen = () => {
               />
             </View>
 
-            <View style={styles.inputRow}>
-              <View style={{ flex: 1, alignItems: 'center' }}>
-                <View style={styles.priceAdjustRow}>
-              <TouchableOpacity 
+            <View style={[styles.inputRow, { justifyContent: 'center', marginTop: 8, marginBottom: 8 }] }>
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                <View style={[styles.priceAdjustRow, { justifyContent: 'center', marginVertical: 8 }] }>
+                  <TouchableOpacity 
                     style={[styles.adjustButton, { opacity: canAdjustPrice && adjustDownCount < 2 ? 1 : 0.5 }]}
                     onPress={handleAdjustDown}
                     disabled={!canAdjustPrice || adjustDownCount >= 2}
                   >
                     <Text style={styles.adjustButtonText}>-5</Text>
                   </TouchableOpacity>
-                  <View style={styles.pricePill}>
-                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#333', textAlign: 'center' }}>
-                      ₹ {offerPrice ? (Math.round((parseFloat(offerPrice) + priceAdjustment) * 100) / 100).toFixed(2) : '--'}
+                  <View style={[styles.pricePill, { marginHorizontal: 16 }] }>
+                    <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#075B5E', textAlign: 'center', letterSpacing: 1 }}>
+                      रू {offerPrice ? (Math.round((parseFloat(offerPrice) + priceAdjustment) * 100) / 100).toFixed(2) : '--'}
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -626,13 +692,6 @@ const PassengerHomeScreen = () => {
                   </TouchableOpacity>
                 </View>
               </View>
-              <TouchableOpacity 
-                style={[styles.calculateButton, loading && styles.buttonDisabled, { marginLeft: 12 }]} 
-                onPress={calculateEstimatedFare}
-                disabled={loading}
-              >
-                <Text style={styles.calculateButtonText}>Calculate</Text>
-              </TouchableOpacity>
             </View>
           </View>
 
@@ -920,20 +979,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 12,
-    gap: 10,
+    marginVertical: 8,
+    gap: 16,
   },
   pricePill: {
-    minWidth: 80,
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    marginHorizontal: 4,
-    borderRadius: 20,
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+    minWidth: 90,
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    borderRadius: 24,
+    backgroundColor: '#e6f7fa',
+    borderWidth: 1.5,
+    borderColor: '#b2ebf2',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#075B5E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   adjustButton: {
     backgroundColor: '#075B5E',

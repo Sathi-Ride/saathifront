@@ -74,7 +74,7 @@ const DriverHomeScreen = () => {
             from: profile.lastRide?.pickupLocation || 'No recent rides',
             to: profile.lastRide?.dropoffLocation || 'No recent rides',
             date: profile.lastRide?.date ? new Date(profile.lastRide.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'No recent rides',
-            fare: profile.lastRide?.fare ? `₹${profile.lastRide.fare}` : 'No recent rides',
+            fare: profile.lastRide?.fare ? `रू${profile.lastRide.fare}` : 'No recent rides',
           });
         } else {
           // Driver is not logged in or has no profile

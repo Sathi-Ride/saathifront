@@ -63,7 +63,7 @@ interface RideDetails {
   dropOffLng?: number;
   offerPrice: number;
   finalPrice?: number;
-  status: 'pending' | 'accepted' | 'in-progress' | 'completed' | 'cancelled';
+  status: 'pending' | 'accepted' | 'in-progress' | 'completed' | 'cancelled' | 'searching';
   comments?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -326,12 +326,12 @@ const RideDetailsScreen = () => {
           setRideDetails(rideData)
         } else {
           console.log('[RideDetails] No ride details found, using fallback data')
-          setRideDetails(null) // Use fallback data
+          setRideDetails(null) 
         }
       } catch (err) {
         console.error('[RideDetails] Error fetching ride details:', err)
         console.log('[RideDetails] Using fallback data due to error')
-        setRideDetails(null) // Use fallback data on error
+        setRideDetails(null)
       } finally {
         setLoading(false)
       }
@@ -511,8 +511,20 @@ const RideDetailsScreen = () => {
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
-            <Icon name="arrow-back" size={24} color="#000" />
+          <TouchableOpacity onPress={handleBackPress} style={{
+            backgroundColor: '#075B5E',
+            borderRadius: 20,
+            width: 40,
+            height: 40,
+            justifyContent: 'center',
+            alignItems: 'center',
+            elevation: 3,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+          }}>
+            <Icon name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Ride Details</Text>
           <View style={styles.roleIndicator}>
@@ -533,8 +545,20 @@ const RideDetailsScreen = () => {
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
-            <Icon name="arrow-back" size={24} color="#000" />
+          <TouchableOpacity onPress={handleBackPress} style={{
+            backgroundColor: '#075B5E',
+            borderRadius: 20,
+            width: 40,
+            height: 40,
+            justifyContent: 'center',
+            alignItems: 'center',
+            elevation: 3,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+          }}>
+            <Icon name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Ride Details</Text>
           <View style={styles.roleIndicator}>
@@ -558,8 +582,22 @@ const RideDetailsScreen = () => {
 
       {/* Header with role indicator */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color="#000" />
+        <TouchableOpacity onPress={handleBackPress} style={{
+          backgroundColor: '#075B5E',
+          borderRadius: 20,
+          width: 40,
+          height: 40,
+          justifyContent: 'center',
+          alignItems: 'center',
+          elevation: 3,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+          pointerEvents: 'auto',
+          zIndex: 10,
+        }}>
+          <Icon name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{rideDate}</Text>
         <View style={styles.roleIndicator}>

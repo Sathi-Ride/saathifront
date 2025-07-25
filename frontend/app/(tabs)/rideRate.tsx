@@ -233,7 +233,7 @@ const RideRatingScreen = () => {
             <View style={styles.tripRow}>
               <Icon name="payment" size={20} color="#075B5E" />
               <Text style={styles.tripLabel}>Fare:</Text>
-              <Text style={styles.tripValue}>₹{fare || tripDetails?.fare || '0'}</Text>
+              <Text style={styles.tripValue}>रू{fare || tripDetails?.fare || '0'}</Text>
             </View>
             <View style={styles.tripRow}>
               <Icon name="location-on" size={20} color="#075B5E" />

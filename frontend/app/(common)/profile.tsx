@@ -195,8 +195,20 @@ const ProfileSettingsScreen = () => {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Icon name="arrow-back" size={24} color="#333" />
+        <TouchableOpacity onPress={() => router.back()} style={{
+          backgroundColor: '#075B5E',
+          borderRadius: 20,
+          width: 40,
+          height: 40,
+          justifyContent: 'center',
+          alignItems: 'center',
+          elevation: 3,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+        }}>
+          <Icon name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile Settings</Text>
       </View>
@@ -225,6 +237,7 @@ const ProfileSettingsScreen = () => {
           style={styles.input}
           underlineColor="transparent"
           activeUnderlineColor="transparent"
+          cursorColor="#075B5E"
         />
         <TextInput
           mode="flat"
@@ -235,6 +248,7 @@ const ProfileSettingsScreen = () => {
           style={styles.input}
           underlineColor="transparent"
           activeUnderlineColor="transparent"
+          cursorColor="#075B5E"
         />
         <TextInput
           mode="flat"
@@ -247,6 +261,7 @@ const ProfileSettingsScreen = () => {
           style={styles.input}
           underlineColor="transparent"
           activeUnderlineColor="transparent"
+          cursorColor="#075B5E"
         />
         <TextInput
           mode="flat"
@@ -336,7 +351,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     alignItems: 'center',
     position: 'absolute',
-    bottom: 20,
+    bottom: 17,
     width: width - 32,
   },
   saveButtonText: {

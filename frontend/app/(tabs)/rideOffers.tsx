@@ -76,7 +76,10 @@ const RideOffersScreen = () => {
     };
 
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
-    return () => backHandler.remove();
+    return () => {
+      backHandler.remove();
+      setShowCancelConfirmation(false); // Reset modal state on unmount
+    };
   }, []);
 
   useEffect(() => {
@@ -440,7 +443,7 @@ const RideOffersScreen = () => {
           </View>
         </View>
         <View style={styles.priceContainer}>
-          <Text style={styles.price}>₹{item.offeredPrice.toFixed(2)}</Text>
+          <Text style={styles.price}>रू{item.offeredPrice.toFixed(2)}</Text>
           <Text style={styles.priceLabel}>Offered Price</Text>
         </View>
       </View>
@@ -519,7 +522,7 @@ const RideOffersScreen = () => {
         </View>
         <View style={styles.rideDetails}>
           <Text style={styles.vehicleType}>{vehicle}</Text>
-          <Text style={styles.yourOffer}>Your offer: ₹{parseFloat(fare).toFixed(2)}</Text>
+          <Text style={styles.yourOffer}>Your offer: रू{parseFloat(fare).toFixed(2)}</Text>
         </View>
       </View>
 
