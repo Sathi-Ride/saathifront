@@ -83,7 +83,7 @@ const Brand = () => {
                 style={[styles.input, loading && styles.inputDisabled]}
                 value={brand}
                 onChangeText={setBrand}
-                placeholder="e.g., Honda, Toyota, Suzuki"
+                placeholder="Vehicle brand"
                 editable={!loading}
               />
             </View>
@@ -94,7 +94,7 @@ const Brand = () => {
                 style={[styles.input, loading && styles.inputDisabled]}
                 value={model}
                 onChangeText={setModel}
-                placeholder="e.g., Civic, Corolla, Swift"
+                placeholder="Vehicle model"
                 editable={!loading}
               />
             </View>
@@ -105,7 +105,7 @@ const Brand = () => {
                 style={[styles.input, loading && styles.inputDisabled]}
                 value={year}
                 onChangeText={setYear}
-                placeholder="e.g., 2020"
+                placeholder="Year"
                 keyboardType="numeric"
                 editable={!loading}
               />
@@ -116,7 +116,7 @@ const Brand = () => {
                 style={[styles.input, loading && styles.inputDisabled]}
                 value={color}
                 onChangeText={setColor}
-                placeholder="e.g., Red, Blue, Black"
+                placeholder="Color"
                 editable={!loading}
               />
             </View>
@@ -139,7 +139,7 @@ const Brand = () => {
       <ConfirmationModal
         visible={showBackConfirmation}
         title="Cancel Process?"
-        message="You are currently saving vehicle information. Are you sure you want to cancel this process?"
+        message="Are you sure you want to cancel vehicle setup?"
         confirmText="Cancel"
         cancelText="Continue"
         onConfirm={handleConfirmBack}

@@ -239,7 +239,7 @@ const AccountRestoration = () => {
       <ConfirmationModal
         visible={showBackConfirmation}
         title={step === 'otp' ? 'Cancel Verification?' : 'Cancel Process?'}
-        message={step === 'otp' ? 'You are currently verifying your OTP. Are you sure you want to cancel this process?' : 'You are currently sending an OTP. Are you sure you want to cancel this process?'}
+        message={step === 'otp' ? 'Are you sure you want to cancel OTP verification?' : 'Are you sure you want to cancel OTP process?'}
         confirmText="Cancel"
         cancelText="Continue"
         onConfirm={handleConfirmBack}

@@ -1817,9 +1817,9 @@ const RideTrackerScreen = () => {
           // Clean up and redirect
           setTimeout(() => {
             if (userRole === 'passenger') {
-              router.push('/(tabs)');
+              router.replace('/(tabs)');
             } else {
-              router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
+              router.replace({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
             }
           }, 2000);
           return;
@@ -1847,9 +1847,9 @@ const RideTrackerScreen = () => {
         // Clean up and redirect
         setTimeout(() => {
           if (userRole === 'passenger') {
-            router.push('/(tabs)');
+            router.replace('/(tabs)');
           } else {
-            router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
+            router.replace({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
           }
         }, 2000);
       }
@@ -1866,9 +1866,9 @@ const RideTrackerScreen = () => {
         // Clean up and redirect
         setTimeout(() => {
           if (userRole === 'passenger') {
-            router.push('/(tabs)');
+            router.replace('/(tabs)');
           } else {
-            router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
+            router.replace({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
           }
         }, 2000);
       } else {
@@ -2131,10 +2131,10 @@ const RideTrackerScreen = () => {
           style={[styles.button, { backgroundColor: '#075B5E', marginTop: 30 }]}
           onPress={() => {
             if (userRole === 'passenger') {
-              router.push('/(tabs)');
+              router.replace('/(tabs)');
             } else {
               // For drivers, go to logged-in driver home screen
-              router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
+              router.replace({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
             }
           }}
         >
@@ -2431,7 +2431,7 @@ const RideTrackerScreen = () => {
             <Text style={{ fontSize: 17, fontWeight: '700', color: '#222', textAlign: 'center', marginBottom: 6 }}>Cancel Ride</Text>
             <TextInput
               style={{ width: '100%', minHeight: 60, borderWidth: 1, borderColor: '#eee', borderRadius: 8, padding: 10, fontSize: 15, color: '#333', marginBottom: 14, backgroundColor: '#fafbfc' }}
-              placeholder="Reason for cancellation (e.g., Change of plans, Emergency)"
+              placeholder="Cancellation reason"
               multiline
               numberOfLines={3}
               value={cancellationReason}
@@ -2458,7 +2458,7 @@ const RideTrackerScreen = () => {
       <ConfirmationModal
         visible={showBackConfirmation}
         title="Leave Ride?"
-        message="You are currently in an active ride. Leaving now will stop tracking and may affect your ride experience."
+        message="Are you sure you want to leave this ride?"
         confirmText="Leave"
         cancelText="Stay"
         onConfirm={handleConfirmBack}

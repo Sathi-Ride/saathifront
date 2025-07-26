@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { View, StyleSheet, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, StyleSheet, Text, TextInput, TouchableOpacity, ActivityIndicator, BackHandler } from 'react-native';
 import { Button } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Icon from 'react-native-vector-icons/FontAwesome';
@@ -111,6 +111,16 @@ const VerifyScreen = () => {
     setShowBackConfirmation(false);
   };
 
+  useEffect(() => {
+    const backAction = () => {
+      setShowBackConfirmation(true);
+      return true; 
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, []);
+
   return (
     <View style={styles.container}>
       <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
@@ -167,7 +177,7 @@ const VerifyScreen = () => {
       <ConfirmationModal
         visible={showBackConfirmation}
         title="Cancel Verification?"
-        message="You are currently verifying your OTP. Are you sure you want to cancel this process?"
+        message="Are you sure you want to cancel OTP verification?"
         confirmText="Cancel"
         cancelText="Continue"
         onConfirm={handleConfirmBack}

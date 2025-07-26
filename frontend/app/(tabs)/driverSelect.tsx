@@ -304,7 +304,7 @@ const DriverSelectionScreen = () => {
               <Text style={styles.messageTitle}>Add a message</Text>
               <TextInput
                 style={[styles.messageInput, loading && styles.messageInputDisabled]}
-                placeholder="e.g., Can we meet at this fare?"
+                placeholder="Message to driver"
                 placeholderTextColor="#999"
                 value={bargainMessage}
                 onChangeText={setBargainMessage}
@@ -463,7 +463,7 @@ const DriverSelectionScreen = () => {
         <ConfirmationModal
           visible={showBackConfirmation}
           title="Cancel Driver Search?"
-          message="You are currently searching for drivers. Are you sure you want to cancel this process?"
+          message="Are you sure you want to cancel driver search?"
           confirmText="Cancel"
           cancelText="Continue"
           onConfirm={handleConfirmBack}

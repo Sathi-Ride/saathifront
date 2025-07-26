@@ -187,7 +187,7 @@ const PhoneInputScreen = () => {
       <ConfirmationModal
         visible={showBackConfirmation}
         title="Cancel Registration?"
-        message="You are currently registering. Are you sure you want to cancel this process?"
+        message="Are you sure you want to cancel registration?"
         confirmText="Cancel"
         cancelText="Continue"
         onConfirm={handleConfirmBack}

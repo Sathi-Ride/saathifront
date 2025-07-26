@@ -237,7 +237,7 @@ const ReviewAndSubmit = () => {
       <ConfirmationModal
         visible={showBackConfirmation}
         title="Cancel Submission?"
-        message="You are currently submitting your registration. Are you sure you want to cancel this process?"
+        message="Are you sure you want to cancel registration?"
         confirmText="Cancel"
         cancelText="Continue"
         onConfirm={handleConfirmBack}

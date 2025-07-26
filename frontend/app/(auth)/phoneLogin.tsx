@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, StyleSheet, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -143,7 +143,7 @@ const PhoneLoginScreen = () => {
       <ConfirmationModal
         visible={showBackConfirmation}
         title="Cancel Process?"
-        message="You are currently sending an OTP. Are you sure you want to cancel this process?"
+        message="Are you sure you want to cancel OTP process?"
         confirmText="Cancel"
         cancelText="Continue"
         onConfirm={handleConfirmBack}

@@ -179,7 +179,7 @@ const ProfileSettingsScreen = () => {
       <ConfirmationModal
         visible={showBackConfirmation}
         title="Cancel Profile Setup?"
-        message="You are currently setting up your profile. Are you sure you want to cancel this process?"
+        message="Are you sure you want to cancel profile setup?"
         confirmText="Cancel"
         cancelText="Continue"
         onConfirm={handleConfirmBack}

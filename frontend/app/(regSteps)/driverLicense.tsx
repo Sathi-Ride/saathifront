@@ -168,7 +168,7 @@ const License = () => {
                 disabled={loading}
               >
                 <Text style={{ color: licenseExpiry ? '#000' : '#ccc', fontSize: 16 }}>
-                  {licenseExpiry ? licenseExpiry : 'YYYY-MM-DD (e.g., 2025-12-31)'}
+                  {licenseExpiry ? licenseExpiry : 'Select expiry date'}
                 </Text>
               </TouchableOpacity>
               <Text style={styles.inputHint}>Format: YYYY-MM-DD</Text>
@@ -202,7 +202,7 @@ const License = () => {
                 style={[styles.input, loading && styles.inputDisabled]}
                 value={citizenship}
                 onChangeText={setCitizenship}
-                placeholder="e.g., Nepali, Foreign"
+                placeholder="Citizenship type"
                 editable={!loading}
               />
             </View>
@@ -290,7 +290,7 @@ const License = () => {
       <ConfirmationModal
         visible={showBackConfirmation}
         title="Cancel License Setup?"
-        message="You are currently setting up your license information. Are you sure you want to cancel this process?"
+        message="Are you sure you want to cancel license setup?"
         confirmText="Cancel"
         cancelText="Continue"
         onConfirm={handleConfirmBack}

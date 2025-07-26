@@ -46,6 +46,7 @@ const RideOffersScreen = () => {
   const [processing, setProcessing] = useState(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [rideCancelled, setRideCancelled] = useState(false);
   const [toast, setToast] = useState<{
     visible: boolean;
     message: string;
@@ -242,7 +243,12 @@ const RideOffersScreen = () => {
   };
 
   const handleBackPress = () => {
-    setShowCancelConfirmation(true);
+    // If we're already cancelling, ride is cancelled, or have no offers, just go back
+    if (cancelling || rideCancelled || offers.length === 0) {
+      router.replace('/(tabs)');
+    } else {
+      setShowCancelConfirmation(true);
+    }
   };
 
   const handleCancelRideRequest = () => {
@@ -278,9 +284,10 @@ const RideOffersScreen = () => {
         }
         
         showToast('Ride request cancelled', 'info');
-        // Navigate back to home screen
+        setRideCancelled(true);
+        // Navigate back to home screen and clear the stack
         setTimeout(() => {
-          router.push('/(tabs)');
+          router.replace('/(tabs)');
         }, 1500);
       } else {
         showToast('Failed to cancel ride request', 'error');
@@ -566,7 +573,7 @@ const RideOffersScreen = () => {
       <ConfirmationModal
         visible={showCancelConfirmation}
         title="Leave Ride Offers?"
-        message="Are you sure you want to leave? This will cancel your ride request."
+        message="Are you sure you want to cancel your ride request?"
         confirmText="Leave"
         cancelText="Stay"
         onConfirm={confirmCancelRideRequest}

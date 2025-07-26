@@ -56,8 +56,33 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
     }
   }, [visible]);
 
-  // Accent color for confirm button
-  const accentColor = type === 'danger' ? '#EF4444' : type === 'info' ? '#3B82F6' : '#F59E0B';
+  const getTypeConfig = () => {
+    switch (type) {
+      case 'danger':
+        return {
+          icon: 'alert-circle',
+          color: '#EF4444',
+          bg: '#FEF2F2',
+          borderColor: '#EF4444'
+        };
+      case 'info':
+        return {
+          icon: 'information-circle',
+          color: '#3B82F6',
+          bg: '#EFF6FF',
+          borderColor: '#3B82F6'
+        };
+      default: // warning
+        return {
+          icon: 'warning',
+          color: '#F59E0B',
+          bg: '#FFFBEB',
+          borderColor: '#F59E0B'
+        };
+    }
+  };
+
+  const { icon, color, bg, borderColor } = getTypeConfig();
 
   return (
     <Modal
@@ -67,14 +92,17 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
       onRequestClose={onCancel}
     >
       <Animated.View style={[styles.overlay, { opacity }]}> 
-        <Animated.View style={[styles.container, { transform: [{ scale }] }]}> 
+        <Animated.View style={[styles.container, { transform: [{ scale }], borderColor }]}> 
+          <View style={[styles.iconCircle, { backgroundColor: bg }]}>
+            <Ionicons name={icon as any} size={28} color={color} />
+          </View>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.message}>{message}</Text>
           <View style={styles.buttonRow}>
             <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
               <Text style={styles.cancelButtonText}>{cancelText}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.confirmButton, { backgroundColor: accentColor }]} onPress={onConfirm}>
+            <TouchableOpacity style={[styles.confirmButton, { backgroundColor: color }]} onPress={onConfirm}>
               <Text style={styles.confirmButtonText}>{confirmText}</Text>
             </TouchableOpacity>
           </View>
@@ -87,68 +115,80 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.18)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
   },
   container: {
     backgroundColor: '#fff',
-    borderRadius: 14,
-    paddingVertical: 20,
-    paddingHorizontal: 18,
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
     width: '100%',
-    maxWidth: 320,
+    maxWidth: 340,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
+    borderWidth: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.10,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  iconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   title: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#222',
+    color: '#1F2937',
     textAlign: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   message: {
     fontSize: 15,
-    color: '#555',
+    color: '#6B7280',
     textAlign: 'center',
-    marginBottom: 18,
+    marginBottom: 24,
     lineHeight: 20,
   },
   buttonRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
     width: '100%',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
   },
   cancelButton: {
-    paddingVertical: 8,
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 6,
-    backgroundColor: 'transparent',
-    marginRight: 2,
+    marginRight: 6,
   },
   cancelButtonText: {
-    color: '#888',
+    color: '#374151',
     fontSize: 15,
     fontWeight: '600',
+    textAlign: 'center',
   },
   confirmButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 18,
-    borderRadius: 6,
+    flex: 1,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginLeft: 6,
   },
   confirmButtonText: {
     color: '#fff',
     fontSize: 15,
     fontWeight: '600',
+    textAlign: 'center',
   },
 });
 

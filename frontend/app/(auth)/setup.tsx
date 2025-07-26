@@ -156,8 +156,21 @@ const SetupScreen = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
-        <Icon name="arrow-back" size={24} color="#075B5E" />
+      <TouchableOpacity onPress={handleBackPress} style={{
+          backgroundColor: '#075B5E',
+          borderRadius: 20,
+          width: 40,
+          height: 40,
+          justifyContent: 'center',
+          alignItems: 'center',
+          elevation: 3,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+          marginTop: 40,
+        }}>
+          <Icon name="arrow-back" size={24} color="#fff" />
       </TouchableOpacity>
       <View style={styles.contentContainer}>
         <Text style={styles.title}>{getTitle()}</Text>
@@ -229,7 +242,7 @@ const SetupScreen = () => {
       <ConfirmationModal
         visible={showBackConfirmation}
         title="Cancel Setup?"
-        message="You are currently setting up your account. Are you sure you want to cancel this process?"
+        message="Are you sure you want to cancel account setup?"
         confirmText="Cancel"
         cancelText="Continue"
         onConfirm={handleConfirmBack}
@@ -242,7 +255,6 @@ const SetupScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff", paddingHorizontal: 16 },
-  backButton: { padding: 12, marginTop: 20, alignSelf: "flex-start" },
   contentContainer: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 20 },
   title: { fontSize: 28, fontWeight: "700", marginBottom: 32, textAlign: "center", color: "#333" },
   profileImageContainer: { width: 100, height: 100, borderRadius: 50, marginBottom: 32, position: "relative" },

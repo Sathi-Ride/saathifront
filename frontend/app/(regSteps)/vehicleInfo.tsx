@@ -149,7 +149,7 @@ const VehicleInfo = () => {
       <ConfirmationModal
         visible={showBackConfirmation}
         title="Cancel Vehicle Setup?"
-        message="You are currently setting up your vehicle information. Are you sure you want to cancel this process?"
+        message="Are you sure you want to cancel vehicle setup?"
         confirmText="Cancel"
         cancelText="Continue"
         onConfirm={handleConfirmBack}

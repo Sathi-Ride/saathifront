@@ -138,7 +138,7 @@ const Selfie = () => {
       <ConfirmationModal
         visible={showBackConfirmation}
         title="Cancel Selfie Setup?"
-        message="You are currently setting up your selfie. Are you sure you want to cancel this process?"
+        message="Are you sure you want to cancel selfie setup?"
         confirmText="Cancel"
         cancelText="Continue"
         onConfirm={handleConfirmBack}

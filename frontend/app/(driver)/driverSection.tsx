@@ -920,7 +920,7 @@ const DriverSection = () => {
         <ConfirmationModal
           visible={showBackConfirmation}
           title={isOnline ? "Go Offline and Leave?" : "Cancel Loading?"}
-          message={isOnline ? "You are currently online. Going back will take you offline and you will stop receiving ride requests. Are you sure you want to continue?" : "Driver data is currently loading. Are you sure you want to cancel this process?"}
+          message={isOnline ? "Are you sure you want to go offline?" : "Are you sure you want to cancel loading?"}
           confirmText="Go Back"
           cancelText="Stay"
           onConfirm={handleConfirmBack}
@@ -931,7 +931,7 @@ const DriverSection = () => {
         <ConfirmationModal
           visible={showPassengerCancelledModal}
           title="Passenger Cancelled Ride"
-          message="The passenger has cancelled this ride request. You can now accept other offers."
+          message="You can now accept other offers."
           confirmText="OK"
           cancelText=""
           onConfirm={() => {
