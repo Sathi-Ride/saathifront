@@ -24,23 +24,18 @@ const RideHistoryScreen = () => {
 
   useEffect(() => {
     const fetchHistory = async () => {
-      console.log('[RideHistory] Current user role:', userRole)
       setLoading(true)
       setError(null)
       try {
         let rides: Ride[] = []
         if (userRole === 'driver') {
-          console.log('[RideHistory] Fetching driver rides...')
           rides = await rideService.getDriverRides('completed')
         } else {
-          console.log('[RideHistory] Fetching passenger rides...')
           rides = await rideService.getPassengerRides('completed')
         }
         
-        console.log('[RideHistory] Received rides:', rides.length, rides)
         setRideHistory(rides)
       } catch (err) {
-        console.error('[RideHistory] Error fetching rides:', err)
         setRideHistory([])
         setError('Failed to load ride history')
       } finally {
@@ -57,7 +52,6 @@ const RideHistoryScreen = () => {
   }, []);
 
   const resetToPassenger = async () => {
-    console.log('[RideHistory] Resetting role to passenger...')
     await userRoleManager.setRole('passenger')
   }
 
@@ -83,10 +77,6 @@ const RideHistoryScreen = () => {
   }
 
   const handleRidePress = (ride: Ride) => {
-    console.log('[RideHistory] Full ride data for details:', JSON.stringify(ride, null, 2))
-    console.log('[RideHistory] Driver data:', ride.driver)
-    console.log('[RideHistory] Passenger data:', ride.passenger)
-    console.log('[RideHistory] Vehicle data:', ride.vehicleType)
     
     // Navigate to ride details screen with proper data
     router.push({

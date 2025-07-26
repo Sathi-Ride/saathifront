@@ -318,19 +318,16 @@ const RideDetailsScreen = () => {
       setLoading(true)
       setError(null)
       try {
-        console.log('[RideDetails] Fetching ride details for:', rideId)
         const rideData = await rideService.getRideDetails(rideId)
-        console.log('[RideDetails] Received ride details:', rideData)
-        
+
         if (rideData) {
           setRideDetails(rideData)
         } else {
-          console.log('[RideDetails] No ride details found, using fallback data')
+         
           setRideDetails(null) 
         }
       } catch (err) {
         console.error('[RideDetails] Error fetching ride details:', err)
-        console.log('[RideDetails] Using fallback data due to error')
         setRideDetails(null)
       } finally {
         setLoading(false)

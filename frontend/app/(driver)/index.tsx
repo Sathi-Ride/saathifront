@@ -8,6 +8,7 @@ import {
   Dimensions,
   SafeAreaView,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -17,6 +18,80 @@ import Toast from '../../components/ui/Toast';
 import apiClient from '../utils/apiClient';
 import { userRoleManager } from '../utils/userRoleManager';
 import webSocketService from '../utils/websocketService';
+
+// Add the profit/loss calculation function
+const calculateDriverProfitLoss = async (): Promise<{
+  profit: number;
+  loss: number;
+  breakdown: {
+    grossEarnings: number;
+    commission: number;
+    rewards: number;
+    netProfit: number;
+  };
+}> => {
+  try {
+    const ridesResponse = await apiClient.get('rides/driver?status=completed');
+    const completedRides = ridesResponse.data.data || [];
+    
+    const walletResponse = await apiClient.get('wallet-transactions');
+    const walletTransactions = walletResponse.data.data || [];
+
+    const rewardResponse = await apiClient.get('reward-transactions');
+    const rewardTransactions = rewardResponse.data.data || [];
+    
+    const grossEarnings = completedRides.reduce((total: number, ride: any) => {
+      return total + (ride.acceptedOffer?.offerAmount || 0);
+    }, 0);
+    
+    // Calculate Total Commission Paid
+    const commission = walletTransactions.reduce((total: number, transaction: any) => {
+      const desc = (transaction.desc || '').toLowerCase();
+      const type = (transaction.type || '').toLowerCase();
+      if (desc === 'ride commission' && type === 'debit') {
+        return total + Math.abs(transaction.amount);
+      }
+      return total;
+    }, 0);
+    
+    // Calculate Total Rewards Earned
+    const rewards = rewardTransactions.reduce((total: number, transaction: any) => {
+      if (transaction.type === 'EARNED') {
+        return total + transaction.amount;
+      }
+      return total;
+    }, 0);
+    
+    // Calculate Net Profit and Loss
+    const netProfit = grossEarnings - commission + rewards;
+    const loss = commission;
+    
+    return {
+      profit: netProfit,
+      loss: loss,
+      breakdown: {
+        grossEarnings,
+        commission,
+        rewards,
+        netProfit
+      }
+    };
+  } catch (error) {
+    const err = error as any;
+    console.error('Error calculating profit/loss:', err);
+    // Return default values on error
+    return {
+      profit: 0,
+      loss: 0,
+      breakdown: {
+        grossEarnings: 0,
+        commission: 0,
+        rewards: 0,
+        netProfit: 0
+      }
+    };
+  }
+};
 
 const { width, height } = Dimensions.get('window');
 
@@ -31,6 +106,16 @@ const DriverHomeScreen = () => {
   const [passengerRatings, setPassengerRatings] = useState({ averageRating: 0, totalReviews: 0 });
   const [loading, setLoading] = useState(true);
   const [recentRide, setRecentRide] = useState({ from: '', to: '', date: '', fare: '' });
+  const [profitLossData, setProfitLossData] = useState({
+    profit: 0,
+    loss: 0,
+    breakdown: {
+      grossEarnings: 0,
+      commission: 0,
+      rewards: 0,
+      netProfit: 0
+    }
+  });
   
   const [toast, setToast] = useState<{
     visible: boolean;
@@ -76,6 +161,10 @@ const DriverHomeScreen = () => {
             date: profile.lastRide?.date ? new Date(profile.lastRide.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'No recent rides',
             fare: profile.lastRide?.fare ? `रू${profile.lastRide.fare}` : 'No recent rides',
           });
+
+          // Fetch profit/loss data for registered drivers
+          const profitData = await calculateDriverProfitLoss();
+          setProfitLossData(profitData);
         } else {
           // Driver is not logged in or has no profile
           setIsAccountRestored(false);
@@ -127,61 +216,72 @@ const DriverHomeScreen = () => {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.hamburgerButton} onPress={openSidePanel}>
-            <View style={styles.hamburgerLine} />
-            <View style={styles.hamburgerLine} />
-            <View style={styles.hamburgerLine} />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.content}>
-          <View style={styles.incomeCard}>
-            <Text style={styles.incomeTitle}>
-              {'Welcome to Saathi! 🎉'}
-            </Text>
-              <>
-                <Text style={styles.welcomeText}>You can now start accepting rides and earning money.</Text>
-              </>
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.hamburgerButton} onPress={openSidePanel}>
+              <View style={styles.hamburgerLine} />
+              <View style={styles.hamburgerLine} />
+              <View style={styles.hamburgerLine} />
+            </TouchableOpacity>
           </View>
-
-          <View style={styles.vehicleDetailsCard}>
-            <Text style={styles.sectionTitle}>Vehicle Details</Text>
-            <Text style={styles.detailText}>Type: {vehicleDetails.type}</Text>
-            <Text style={styles.detailText}>License Plate: {vehicleDetails.licensePlate}</Text>
-            <Text style={styles.detailText}>Model: {vehicleDetails.model}</Text>
-          </View>
-
-          <View style={styles.ratingsCard}>
-            <Text style={styles.sectionTitle}>Passenger Ratings</Text>
-            <Text style={styles.detailText}>Average Rating: {passengerRatings.averageRating.toFixed(1)} / 5</Text>
-            <Text style={styles.detailText}>Total Reviews: {passengerRatings.totalReviews}</Text>
-          </View>
-
-
-          {/* Driver Section Button */}
-          <TouchableOpacity style={styles.driverSectionButton} onPress={handleDriverSection}>
-            <View style={styles.driverSectionContent}>
-              <MaterialIcons name="directions-car" size={24} color="#fff" />
-              <Text style={styles.driverSectionText}>Driver Section</Text>
+          <View style={styles.content}>
+            <View style={styles.incomeCard}>
+              <Text style={styles.incomeTitle}>
+                {'Welcome to Saathi! 🎉'}
+              </Text>
+                <>
+                  <Text style={styles.welcomeText}>You can now start accepting rides and earning money.</Text>
+                </>
             </View>
-            <MaterialIcons name="arrow-forward-ios" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
 
-        <SidePanel
-          visible={sidePanelVisible}
-          onClose={closeSidePanel}
-          role={role}
-          rideInProgress={rideInProgress}
-          onChangeRole={handleChangeRole}
-        />
+            <View style={styles.vehicleDetailsCard}>
+              <Text style={styles.sectionTitle}>Vehicle Details</Text>
+              <Text style={styles.detailText}>Type: {vehicleDetails.type}</Text>
+              <Text style={styles.detailText}>License Plate: {vehicleDetails.licensePlate}</Text>
+              <Text style={styles.detailText}>Model: {vehicleDetails.model}</Text>
+            </View>
 
-        <Toast
-          visible={toast.visible}
-          message={toast.message}
-          type={toast.type}
-          onHide={hideToast}
-        />
+            <View style={styles.ratingsCard}>
+              <Text style={styles.sectionTitle}>Passenger Ratings</Text>
+              <Text style={styles.detailText}>Average Rating: {passengerRatings.averageRating.toFixed(1)} / 5</Text>
+              <Text style={styles.detailText}>Total Reviews: {passengerRatings.totalReviews}</Text>
+            </View>
+
+            <View style={styles.profitLossCard}>
+              <Text style={styles.sectionTitle}>Earnings & Expenses</Text>
+              <Text style={styles.detailText}>
+                Net Profit: रू {Math.round(profitLossData.profit)}
+              </Text>
+              <Text style={styles.detailText}>
+                Total Loss: रू {profitLossData.loss > 0 ? Math.round(profitLossData.loss) : 0}
+              </Text>
+            </View>
+
+            {/* Driver Section Button */}
+            <TouchableOpacity style={styles.driverSectionButton} onPress={handleDriverSection}>
+              <View style={styles.driverSectionContent}>
+                <MaterialIcons name="directions-car" size={24} color="#fff" />
+                <Text style={styles.driverSectionText}>Driver Section</Text>
+              </View>
+              <MaterialIcons name="arrow-forward-ios" size={20} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          <SidePanel
+            visible={sidePanelVisible}
+            onClose={closeSidePanel}
+            role={role}
+            rideInProgress={rideInProgress}
+            onChangeRole={handleChangeRole}
+          />
+
+          <Toast
+            visible={toast.visible}
+            message={toast.message}
+            type={toast.type}
+            onHide={hideToast}
+          />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -360,6 +460,20 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   ratingsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  profitLossCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 20,

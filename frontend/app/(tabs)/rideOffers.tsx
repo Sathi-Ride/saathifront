@@ -328,29 +328,34 @@ const RideOffersScreen = () => {
       rideAcceptedListener = async (data: any) => {
         console.log('RideOffers: rideAccepted event received:', data);
         if (data && data.data && data.data.acceptedOffer) {
-          // Update offers list in state
-          setOffers(prev =>
-            prev.map(offer =>
-              offer._id === data.data.acceptedOffer._id
-                ? { ...offer, status: 'accepted' }
-                : offer
-            )
-          );
-          // Only navigate if the accepted offer belongs to the current user (passenger)
-          // (Assuming you have access to the current user/passenger ID)
-          // If you want to restrict navigation to only the passenger who accepted, add a check here
-          await userRoleManager.setRole('passenger');
-          router.push({
-            pathname: '../(common)/rideTracker',
-            params: {
-              rideId: data.data.id,
-              driverName: data.data.driver?.firstName + ' ' + data.data.driver?.lastName,
-              from: data.data.pickUp?.location,
-              to: data.data.dropOff?.location,
-              fare: data.data.offerPrice,
-              vehicle: data.data.vehicle?.name,
-            },
-          });
+          // Check if this accepted offer belongs to the current passenger
+          const currentRideId = data.data.id || data.data.rideId;
+          if (currentRideId && currentRideId === rideId) {
+            console.log('RideOffers: Processing accepted offer for current passenger');
+            // Update offers list in state
+            setOffers(prev =>
+              prev.map(offer =>
+                offer._id === data.data.acceptedOffer._id
+                  ? { ...offer, status: 'accepted' }
+                  : offer
+              )
+            );
+            // Only navigate if the accepted offer belongs to the current user (passenger)
+            await userRoleManager.setRole('passenger');
+            router.push({
+              pathname: '../(common)/rideTracker',
+              params: {
+                rideId: data.data.id,
+                driverName: data.data.driver?.firstName + ' ' + data.data.driver?.lastName,
+                from: data.data.pickUp?.location,
+                to: data.data.dropOff?.location,
+                fare: data.data.offerPrice,
+                vehicle: data.data.vehicle?.name,
+              },
+            });
+          } else {
+            console.log('RideOffers: Ignoring accepted offer for different passenger');
+          }
         } else if (data && data.code && data.code !== 201) {
           // Show error toast if backend returns an error
           showToast(data.message || 'Failed to accept offer. Please try again.', 'error');
@@ -362,11 +367,18 @@ const RideOffersScreen = () => {
       rideCancelledListener = (data: any) => {
         console.log('RideOffers: rideCancelled event received:', data);
         if (data && data.data) {
-          showToast('Ride request has been cancelled', 'info');
-          // Navigate back to home screen
-          setTimeout(() => {
-            router.push('/(tabs)');
-          }, 2000);
+          // Check if this cancelled ride belongs to the current passenger
+          const cancelledRideId = data.data.rideId || data.data.id;
+          if (cancelledRideId && cancelledRideId === rideId) {
+            console.log('RideOffers: Processing cancelled ride for current passenger');
+            showToast('Ride request has been cancelled', 'info');
+            // Navigate back to home screen
+            setTimeout(() => {
+              router.push('/(tabs)');
+            }, 2000);
+          } else {
+            console.log('RideOffers: Ignoring cancelled ride for different passenger');
+          }
         }
       };
       webSocketService.on('rideCancelled', rideCancelledListener, 'ride');

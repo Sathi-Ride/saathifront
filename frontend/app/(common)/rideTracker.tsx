@@ -30,7 +30,6 @@ import * as Haptics from 'expo-haptics';
 
 const { width, height } = Dimensions.get('window');
 
-// Add bounding boxes and isInAllowedArea at the top-level
 const KATHMANDU_BOUNDING_BOX = {
   north: 27.85,
   south: 27.60,
@@ -48,7 +47,6 @@ function isInKathmandu(lat: number, lng: number) {
     lng >= KATHMANDU_BOUNDING_BOX.west && lng <= KATHMANDU_BOUNDING_BOX.east;
 }
 
-// For testing: get a random driver location within 100m of pickup
 async function getTestDriverLocation(pickup: {lat: number, lng: number} | null) {
   if (!pickup) return null;
   const bearing = Math.random() * 2 * Math.PI;
@@ -64,13 +62,10 @@ async function getTestDriverLocation(pickup: {lat: number, lng: number} | null) 
   };
 }
 
-// Add a flag to toggle between test mode and real GPS
-const USE_TEST_DRIVER_LOCATION = true; // Set to false for real GPS
+const USE_TEST_DRIVER_LOCATION = true; // Set to false for real GPS tracking(Manual)
 
-// Track highest progress value globally for this module
 const lastProgressRef = { current: 0 };
 
-// Error boundary component to handle useInsertionEffect errors gracefully
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean; error?: Error }
@@ -119,7 +114,6 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-// Ride interface based on backend response
 interface Ride {
   _id?: string;
   pickUp?: {
@@ -160,7 +154,6 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const distance = R * c;
-  // console.log('[calculateDistance] lat1:', lat1, 'lon1:', lon1, 'lat2:', lat2, 'lon2:', lon2, 'distance:', distance);
   return distance;
 };
 
@@ -185,8 +178,6 @@ function findClosestPointIndex(polyline: {latitude: number; longitude: number}[]
   return closestIndex;
 }
 
-// Progress calculation is handled entirely by the backend
-// No local calculation needed
 
 // Simulate driver movement
 const simulateDriverMovement = async (
@@ -236,7 +227,6 @@ const simulateDriverMovement = async (
           'ride'
         );
       } catch (error: any) {
-        // Suppress expected errors
       }
     }
     await new Promise(resolve => setTimeout(resolve, stepDelay));
@@ -255,7 +245,7 @@ const simulateDriverMovement = async (
       lastProgressRef.current = progress;
       onProgressUpdate(progress);
     }
-    // Always send simulated location to backend
+    
     if (userRole === 'driver') {
       try {
         await webSocketService.emitEvent(
@@ -265,7 +255,6 @@ const simulateDriverMovement = async (
           'ride'
         );
       } catch (error: any) {
-        // Suppress expected errors
       }
     }
     await new Promise(resolve => setTimeout(resolve, stepDelay));
@@ -273,7 +262,6 @@ const simulateDriverMovement = async (
   setSimulating(false);
 };
 
-// Fallback straight line movement function
 const simulateStraightLineMovement = async (
   rideId: string,
   startLocation: { lat: number; lng: number },
@@ -363,7 +351,6 @@ const simulateStraightLineMovement = async (
 const MemoizedMapView = React.memo(MapView);
 
 const RideTrackerScreen = () => {
-  // Add error boundary for useInsertionEffect errors
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -448,6 +435,7 @@ const RideTrackerScreen = () => {
   });
   const [mainRoutePolyline, setMainRoutePolyline] = useState<{ latitude: number; longitude: number }[]>([]);
   const [loadingRoute, setLoadingRoute] = useState(false);
+  const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const mapRef = useRef<MapView>(null);
 
   // --- ANIMATION REFS ---
@@ -862,7 +850,7 @@ const RideTrackerScreen = () => {
                   if (role === 'passenger') {
                     router.push('/(tabs)/rideRate');
                   } else {
-                    router.push('/(driver)');
+                    router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
                   }
                 }
               }, 2000);
@@ -1100,7 +1088,7 @@ const RideTrackerScreen = () => {
               if (userRole === 'passenger') {
                 router.push('/(tabs)');
               } else {
-                router.push('/(driver)');
+                router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
               }
             }
           }, 2000);
@@ -1120,7 +1108,7 @@ const RideTrackerScreen = () => {
                 if (userRole === 'passenger') {
                   router.push('/(tabs)');
                 } else {
-                  router.push('/(driver)');
+                  router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
                 }
               }
             }, 2000);
@@ -1160,7 +1148,7 @@ const RideTrackerScreen = () => {
                 if (userRole === 'passenger') {
                   router.push('/(tabs)');
                 } else {
-                  router.push('/(driver)');
+                  router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
                 }
               }
             }, 2000);
@@ -1331,19 +1319,26 @@ const RideTrackerScreen = () => {
     const handleRideCancelled = (data: any) => {
       console.log('[RideTracker] Ride cancelled event received:', data);
       if (data && data.code === 201 && data.data) {
-        setRideStatus('cancelled');
-        showToast('Ride has been cancelled', 'info');
-        
-        // Navigate back to appropriate screen after a short delay
+        // Check if this cancelled ride belongs to the current user
+        const cancelledRideId = data.data.rideId || data.data.id;
+        if (cancelledRideId && cancelledRideId === rideId) {
+          console.log('[RideTracker] Processing cancelled ride for current user');
+          setRideStatus('cancelled');
+          showToast('Ride has been cancelled', 'info');
+          
+          // Navigate back to appropriate screen after a short delay
           setTimeout(() => {
             if (isMounted.current) {
               if (userRole === 'passenger') {
-              router.push('/(tabs)');
+                router.push('/(tabs)');
               } else {
-                router.push('/(driver)');
+                router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
               }
             }
           }, 2000);
+        } else {
+          console.log('[RideTracker] Ignoring cancelled ride for different user');
+        }
       }
     };
 
@@ -1351,49 +1346,56 @@ const RideTrackerScreen = () => {
     const handleRideStatusUpdate = (data: any) => {
       console.log('[RideTracker] Ride status update received:', data);
       if (data && data.data && data.data.status) {
-        const newStatus = data.data.status;
-        console.log('[RideTracker] Status changed to:', newStatus);
-        
-        if (newStatus === 'cancelled') {
-          setRideStatus('cancelled');
-          showToast('Ride has been cancelled', 'info');
-          setTimeout(() => {
-            if (isMounted.current) {
-              if (userRole === 'passenger') {
-                router.push('/(tabs)');
-              } else {
-                router.push('/(driver)');
+        // Check if this status update belongs to the current user's ride
+        const updatedRideId = data.data.rideId || data.data.id;
+        if (updatedRideId && updatedRideId === rideId) {
+          console.log('[RideTracker] Processing status update for current user');
+          const newStatus = data.data.status;
+          console.log('[RideTracker] Status changed to:', newStatus);
+          
+          if (newStatus === 'cancelled') {
+            setRideStatus('cancelled');
+            showToast('Ride has been cancelled', 'info');
+            setTimeout(() => {
+              if (isMounted.current) {
+                if (userRole === 'passenger') {
+                  router.push('/(tabs)');
+                } else {
+                  router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
+                }
               }
-            }
-          }, 2000);
-        } else if (newStatus === 'completed') {
-          setRideStatus('completed');
-          showToast('Ride completed!', 'success');
-          setTimeout(() => {
-            if (isMounted.current) {
-              if (userRole === 'passenger') {
-                router.push('/(tabs)');
-              } else {
-                router.push('/(driver)');
+            }, 2000);
+          } else if (newStatus === 'completed') {
+            setRideStatus('completed');
+            showToast('Ride completed!', 'success');
+            setTimeout(() => {
+              if (isMounted.current) {
+                if (userRole === 'passenger') {
+                  router.push('/(tabs)/rideRate');
+                } else {
+                  router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
+                }
               }
-            }
-          }, 2000);
-        } else if (newStatus === 'searching') {
-          // If ride goes back to searching, it means it was cancelled/reset
-          setRideStatus('cancelled');
-          showToast('Ride has been cancelled', 'info');
-          setTimeout(() => {
-            if (isMounted.current) {
-              if (userRole === 'passenger') {
-                router.push('/(tabs)');
-              } else {
-                router.push('/(driver)');
+            }, 2000);
+          } else if (newStatus === 'searching') {
+            // If ride goes back to searching, it means it was cancelled/reset
+            setRideStatus('cancelled');
+            showToast('Ride has been cancelled', 'info');
+            setTimeout(() => {
+              if (isMounted.current) {
+                if (userRole === 'passenger') {
+                  router.push('/(tabs)');
+                } else {
+                  router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
+                }
               }
-            }
-          }, 2000);
+            }, 2000);
+          } else {
+            // Update status for other status changes
+            setRideStatus(newStatus as any);
+          }
         } else {
-          // Update status for other status changes
-          setRideStatus(newStatus as any);
+          console.log('[RideTracker] Ignoring status update for different user');
         }
       }
     };
@@ -1432,10 +1434,19 @@ const RideTrackerScreen = () => {
                 }
               });
             } else {
-              router.push('/(driver)');
+              router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
             }
           }
         }, 2000);
+      }
+    };
+
+    // Handle new message
+    const handleNewMessage = (data: any) => {
+      console.log('[RideTracker] New message received:', data);
+      if (data && data.rideId === rideId) {
+        setHasUnreadMessages(true);
+        showToast('New message received', 'info');
       }
     };
 
@@ -1445,6 +1456,7 @@ const RideTrackerScreen = () => {
     webSocketService.on('rideStarted', handleRideStarted, 'ride');
     webSocketService.on('rideCompleted', handleRideCompleted, 'ride');
     webSocketService.on('rideLocationUpdated', handleRideLocationUpdated, 'ride');
+    webSocketService.on('newMessage', handleNewMessage, 'ride');
     
     console.log('[RideTracker] WebSocket event listeners set up successfully');
 
@@ -1456,6 +1468,7 @@ const RideTrackerScreen = () => {
       webSocketService.off('rideStarted', handleRideStarted, 'ride');
       webSocketService.off('rideCompleted', handleRideCompleted, 'ride');
       webSocketService.off('rideLocationUpdated', handleRideLocationUpdated, 'ride');
+      webSocketService.off('newMessage', handleNewMessage, 'ride');
     };
   }, [rideId, userRole, rideStatus, rideCancelled, router, isWebSocketConnected, isLoadingDetails]);
 
@@ -1724,7 +1737,7 @@ const RideTrackerScreen = () => {
                 }
               });
             } else {
-              router.push('/(driver)');
+              router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
             }
           }
         }, 2000);
@@ -1806,7 +1819,7 @@ const RideTrackerScreen = () => {
             if (userRole === 'passenger') {
               router.push('/(tabs)');
             } else {
-              router.push('/(driver)');
+              router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
             }
           }, 2000);
           return;
@@ -1836,7 +1849,7 @@ const RideTrackerScreen = () => {
           if (userRole === 'passenger') {
             router.push('/(tabs)');
           } else {
-            router.push('/(driver)');
+            router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
           }
         }, 2000);
       }
@@ -1855,7 +1868,7 @@ const RideTrackerScreen = () => {
           if (userRole === 'passenger') {
             router.push('/(tabs)');
           } else {
-            router.push('/(driver)');
+            router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
           }
         }, 2000);
       } else {
@@ -2121,7 +2134,7 @@ const RideTrackerScreen = () => {
               router.push('/(tabs)');
             } else {
               // For drivers, go to logged-in driver home screen
-              router.push('/(driver)');
+              router.push({ pathname: '/(driver)/driverSection', params: { fromRideComplete: 'true' } });
             }
           }}
         >
@@ -2273,24 +2286,25 @@ const RideTrackerScreen = () => {
           {/* Route Polylines */}
           {mainRoutePolyline.length > 0 && driverLocation && pickupLocation && dropoffLocation ? (
             <>
-              {/* Completed Route (solid green) */}
-              {completedRoute.length > 1 && (
-                <Polyline
-                  coordinates={completedRoute.map(point => ({ latitude: point.lat, longitude: point.lng }))}
-                  strokeColor="#4CAF50"
-                  strokeWidth={6}
-                  zIndex={2}
-                />
-              )}
-              {/* Driver to Pickup (solid orange) */}
-              {rideStatus !== 'completed' && findClosestPointIndex(mainRoutePolyline, driverLocation) < findClosestPointIndex(mainRoutePolyline, pickupLocation) && (
-                <Polyline
-                  coordinates={mainRoutePolyline.slice(findClosestPointIndex(mainRoutePolyline, driverLocation), findClosestPointIndex(mainRoutePolyline, pickupLocation) + 1)}
-                  strokeColor="#FF9800"
-                  strokeWidth={4}
-                  zIndex={1}
-                />
-              )}
+              {/* Completed Route (solid green) - only after pickup */}
+              {completedRoute.length > 1 && pickupLocation && dropoffLocation && (() => {
+                // Find the index in completedRoute where the driver reaches the pickup location
+                const pickupIdx = completedRoute.findIndex(point =>
+                  Math.abs(point.lat - pickupLocation.lat) < 0.0005 && Math.abs(point.lng - pickupLocation.lng) < 0.0005
+                );
+                // Only show the completed route after pickup
+                if (pickupIdx > 0 && pickupIdx < completedRoute.length - 1) {
+                  return (
+                    <Polyline
+                      coordinates={completedRoute.slice(pickupIdx).map(point => ({ latitude: point.lat, longitude: point.lng }))}
+                      strokeColor="#4CAF50"
+                      strokeWidth={6}
+                      zIndex={2}
+                    />
+                  );
+                }
+                return null;
+              })()}
               {/* Pickup to Dropoff (solid blue) */}
               {findClosestPointIndex(mainRoutePolyline, pickupLocation) < findClosestPointIndex(mainRoutePolyline, dropoffLocation) && (
                 <Polyline
@@ -2401,8 +2415,8 @@ const RideTrackerScreen = () => {
               <Text style={styles.contactButtonText}>Message</Text>
             </TouchableOpacity>
           </View>
-          </View>
         </View>
+      </View>
       <Toast visible={toast.visible} message={toast.message} type={toast.type} onHide={hideToast} />
 
       {isCancellationModalVisible && (

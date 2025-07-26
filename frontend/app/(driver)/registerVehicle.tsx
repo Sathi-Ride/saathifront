@@ -112,9 +112,7 @@ const ChooseVehicle = () => {
         <TouchableOpacity onPress={handleBack} style={styles.backButton}>
           <ArrowLeft size={24} color="#333" />
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-          <Text style={styles.closeText}>Close</Text>
-        </TouchableOpacity>
+        {/* Removed close button */}
       </View>
 
       <View style={styles.content}>

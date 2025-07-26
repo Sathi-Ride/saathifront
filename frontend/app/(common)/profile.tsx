@@ -50,7 +50,6 @@ const ProfileSettingsScreen = () => {
       try {
         const response = await apiClient.get('me');
         const userData = response.data.data;
-        console.log('Fetched user data:', userData);
         
         setName(userData.firstName || '');
         setLastName(userData.lastName || '');
@@ -58,7 +57,6 @@ const ProfileSettingsScreen = () => {
         setMobile(userData.mobile || '');
         
         const photoUrl = getFullImageUrl(userData.photo);
-        console.log('Setting profile image URL:', photoUrl);
         setImageUri(photoUrl);
       } catch (err) {
         console.error('Failed to fetch user data:', err);
@@ -100,14 +98,13 @@ const ProfileSettingsScreen = () => {
       mediaTypes: 'images',
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.5, // 50% quality is usually good
-      base64: false, // Don't get base64, use the file directly
+      quality: 0.5,
+      base64: false, 
     });
     if (!pickerResult.canceled) {
       setUploading(true);
       try {
         const uri = pickerResult.assets[0].uri;
-        console.log('Selected image URI:', uri);
         
         // Create form data for file upload
         const formData = new FormData();
@@ -117,7 +114,6 @@ const ProfileSettingsScreen = () => {
           name: 'profile.jpg',
         } as any);
 
-        console.log('Uploading image to uploads endpoint...');
         
         // First, upload the file to uploads endpoint
         const uploadResponse = await apiClient.post('uploads/public', formData, {
@@ -126,29 +122,26 @@ const ProfileSettingsScreen = () => {
           },
         });
 
-        console.log('Upload response:', uploadResponse.data);
+        
 
         if (uploadResponse.data.statusCode === 201) {
           const imageUrl = uploadResponse.data.data.url;
-          console.log('Image uploaded successfully, URL:', imageUrl);
-          
-          // Fix localhost URL to use correct server IP
+
           let fixedImageUrl = imageUrl;
           if (imageUrl.includes('localhost:3000')) {
             fixedImageUrl = imageUrl.replace(DEFAULT_BASE_URL, ASSET_BASE_URL);
-            console.log('Fixed localhost URL to:', fixedImageUrl);
+
           }
           
           // Then update the profile with the image URL
           const profileUpdateData = { photo: fixedImageUrl };
-          console.log('Updating profile with image URL:', fixedImageUrl);
+
           
           const profileResponse = await apiClient.patch('me', profileUpdateData);
-          console.log('Profile update response:', profileResponse.data);
-          
+   
           if (profileResponse.data.statusCode === 200) {
             const newUrl = getFullImageUrl(profileResponse.data.data.photo);
-            console.log('Setting new image URL:', newUrl);
+            
             setImageUri(newUrl);
             showModal('success', 'Success', 'Profile image updated successfully');
           } else {
@@ -273,10 +266,10 @@ const ProfileSettingsScreen = () => {
           activeUnderlineColor="transparent"
           editable={false}
         />
+        <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={loading}>
+          <Text style={styles.saveButtonText}>{loading ? 'Saving...' : 'Save'}</Text>
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={loading}>
-        <Text style={styles.saveButtonText}>{loading ? 'Saving...' : 'Save'}</Text>
-      </TouchableOpacity>
       <AppModal
         visible={modal.visible}
         type={modal.type}
@@ -301,6 +294,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+    marginTop: 25,
   },
   headerTitle: {
     fontSize: 20,
@@ -345,14 +339,12 @@ const styles = StyleSheet.create({
     height: 50,
   },
   saveButton: {
-    backgroundColor: '#00809D',
+    backgroundColor: '#075B5E',
     borderRadius: 12,
     paddingVertical: 16,
     marginHorizontal: 16,
     alignItems: 'center',
-    position: 'absolute',
-    bottom: 17,
-    width: width - 32,
+    marginTop: 12,
   },
   saveButtonText: {
     color: '#fff',

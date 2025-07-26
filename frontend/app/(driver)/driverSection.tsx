@@ -16,7 +16,7 @@ import {
   Platform,
 } from 'react-native';
 import * as Location from 'expo-location';
-import { useRouter, usePathname } from 'expo-router';
+import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { MapPin, Navigation, Clock, User, Car, Map } from 'lucide-react-native';
 import ProfileImage from '../../components/ProfileImage';
@@ -36,6 +36,7 @@ const { width, height } = Dimensions.get('window');
 const DriverSection = () => {
   const router = useRouter();
   const pathname = usePathname();
+  const params = useLocalSearchParams(); // <-- add this
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
   const [role, setRole] = useState<'driver' | 'passenger'>('driver');
   const [rideInProgress, setRideInProgress] = useState(false);
@@ -112,6 +113,14 @@ const DriverSection = () => {
     };
   }, [isOnline]);
 
+  useEffect(() => {
+    if (params.fromRideComplete === 'true') {
+      console.log('DriverSection: Returning from completed ride, going online automatically');
+      setIsOnline(true);
+      handleAutoOnline();
+    }
+  }, [params.fromRideComplete]);
+
   // Cleanup location tracking on unmount
   useEffect(() => {
     if (stopLocationTracking) {
@@ -152,8 +161,18 @@ const DriverSection = () => {
 
   async function setupWebSocket() {
     try {
+      
       // Connect to driver namespace for driver-specific events
       await webSocketService.connect(undefined, 'driver');
+      
+      // Wait a bit for connection to establish
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Verify connection
+      if (!webSocketService.isSocketConnected()) {
+        throw new Error('WebSocket connection failed to establish');
+      }
+      
       
       let isMounted = true;
       let newRideRequestListener: any;
@@ -162,7 +181,7 @@ const DriverSection = () => {
       
       // Listen for new ride requests (driver namespace)
       newRideRequestListener = (event: any) => {
-        console.log('DriverSection: New ride request received:', event);
+        
         if (event && event.code === 200 && event.data) {
           setAvailableRides(prev => {
             if (prev.some(ride => ride._id === event.data._id)) return prev;
@@ -196,7 +215,7 @@ const DriverSection = () => {
             },
           });
         } else if (data && data.code && data.code !== 201) {
-          showToast(data.message || 'Failed to accept offer. Please try again.', 'error');
+          // showToast(data.message || 'Failed to accept offer. Please try again.', 'error');
         }
       };
       webSocketService.on('offerAccepted', offerAcceptedListener, 'driver');
@@ -204,10 +223,7 @@ const DriverSection = () => {
       // Listen for passenger cancelled ride (driver namespace)
       const passengerCancelledListener = (data: any) => {
         if (!isMounted) return;
-        console.log('DriverSection: Passenger cancelled ride event received:', data);
-        console.log('DriverSection: Event data structure:', JSON.stringify(data, null, 2));
         
-        // Handle different possible data structures
         let rideId = null;
         if (data && data.rideId) {
           rideId = data.rideId;
@@ -215,31 +231,41 @@ const DriverSection = () => {
           rideId = data.data.rideId;
         }
         
-        console.log('DriverSection: Extracted rideId:', rideId);
-        console.log('DriverSection: Current available rides:', availableRides.map(r => r._id));
         
         if (rideId) {
-          console.log('DriverSection: Processing cancellation for rideId:', rideId);
-          
-          setCancelledRideId(rideId);
-          setShowPassengerCancelledModal(true);
-          
-          // Remove the cancelled ride from available rides
+          // Always remove cancelled rides from available rides (they shouldn't be shown to any driver)
           setAvailableRides(prev => {
-            console.log('DriverSection: Filtering rides, removing:', rideId);
-            console.log('DriverSection: Before filter:', prev.map(r => r._id));
+
             const filtered = prev.filter(ride => ride._id !== rideId);
-            console.log('DriverSection: After filter:', filtered.map(r => r._id));
+
             return filtered;
           });
           
-          // If this was the accepted offer, clear the accepted offer state
-          if (acceptedOfferId === rideId) {
-            console.log('DriverSection: Clearing accepted offer:', rideId);
-            setAcceptedOfferId(null);
-          }
+          // Check if this cancelled ride belongs to the current driver (for modal/toast)
+          const isMyRide = availableRides.some(ride => ride._id === rideId) || 
+                          acceptedOfferId === rideId ||
+                          pendingOfferRideId === rideId;
           
-          showToast('Passenger cancelled the ride request', 'info');
+          if (isMyRide) {
+            
+            setCancelledRideId(rideId);
+            setShowPassengerCancelledModal(true);
+            
+            // If this was the accepted offer, clear the accepted offer state
+            if (acceptedOfferId === rideId) {
+              
+              setAcceptedOfferId(null);
+            }
+            
+            // If this was the pending offer, clear the pending offer state
+            if (pendingOfferRideId === rideId) {
+              setPendingOfferRideId(null);
+            }
+            
+            showToast('Passenger cancelled the ride request', 'info');
+          } else {
+            console.log('DriverSection: Ride cancelled but not mine, just removed from available rides:', rideId);
+          }
         } else {
           console.log('DriverSection: Could not extract rideId from data');
         }
@@ -249,14 +275,11 @@ const DriverSection = () => {
       // Listen for offer rejected (driver namespace)
       offerRejectedListener = (data: any) => {
         if (!isMounted) return;
-        console.log('DriverSection: Offer rejected event received:', data);
         
         if (data && data.data && data.data._id) {
           const rejectedOfferId = data.data._id;
           const rideId = data.data.rideId;
-          console.log('DriverSection: Processing rejected offer:', rejectedOfferId, 'for ride:', rideId);
           
-          // Clear the pending offer state for this specific ride
           if (pendingOfferRideId === rideId) {
             setPendingOfferRideId(null);
           }
@@ -271,7 +294,7 @@ const DriverSection = () => {
           
           showToast('Your offer was rejected by passenger', 'info');
         } else if (data && data.code && data.code !== 201) {
-          showToast(data.message || 'Error processing offer rejection', 'error');
+          // showToast(data.message || 'Error processing offer rejection', 'error');
         }
       };
       webSocketService.on('offerRejected', offerRejectedListener, 'driver');
@@ -287,6 +310,7 @@ const DriverSection = () => {
       
     } catch (error) {
       console.error('DriverSection: WebSocket setup failed:', error);
+      throw error; 
     }
   }
 
@@ -457,13 +481,18 @@ const DriverSection = () => {
     if (isOnline || loading) {
       setShowBackConfirmation(true);
     } else {
-      router.back();
+      router.push('/(driver)'); // Go to driver dashboard instead of router.back()
     }
   };
 
   const handleConfirmBack = () => {
     setShowBackConfirmation(false);
-    router.back();
+    // Turn driver offline before navigating
+    setIsOnline(false);
+    // Disconnect WebSocket
+    webSocketService.disconnect();
+    // Navigate to driver dashboard
+    router.push('/(driver)');
   };
 
   const handleCancelBack = () => {
@@ -549,15 +578,13 @@ const DriverSection = () => {
                 latitude: location.latitude,
                 longitude: location.longitude
               }, 'driver');
-              console.log('Driver: Location updated via WebSocket ping');
             } else {
-              console.log('Driver: Skipping location ping - in active ride');
             }
           }
         } catch (error) {
           console.error('Driver: Error updating location in interval:', error);
         }
-      }, 30000); // 30 seconds
+      }, 30000); 
     }
 
     return () => {
@@ -585,6 +612,87 @@ const DriverSection = () => {
     return null;
   };
 
+  const handleAutoOnline = async () => {
+    try {
+      console.log('DriverSection: Starting auto online process');
+      setLoading(true);
+      
+      // Check KYC status first
+      const kycStatus = await checkKycStatus();
+      if (kycStatus !== 'approved' && kycStatus !== 'verified') {
+        console.log('DriverSection: KYC not approved, cannot go online');
+        setIsOnline(false);
+        if (kycStatus === null) {
+          showToast('Please complete your driver profile first', 'error');
+        } else if (kycStatus === 'pending') {
+          showToast('Please wait for KYC verification to be approved', 'error');
+        } else if (kycStatus === 'rejected') {
+          showToast('Your KYC was rejected. Please contact support.', 'error');
+        } else {
+          showToast('Please complete KYC verification before going online', 'error');
+        }
+        setLoading(false);
+        return;
+      }
+
+      // Get current location
+      try {
+        const location = await locationService.getCurrentLocation();
+        console.log('DriverSection: Current location for auto online:', location);
+        
+        // Setup WebSocket with retry logic
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        const attemptWebSocketConnection = async () => {
+          try {
+            console.log(`DriverSection: Attempting WebSocket connection (attempt ${retryCount + 1}/${maxRetries})`);
+            await setupWebSocket();
+            
+            if (!webSocketService.isSocketConnected()) {
+              throw new Error('WebSocket connection failed');
+            }
+
+            // Ping status
+            webSocketService.emit('pingStatus', {
+              latitude: location.latitude,
+              longitude: location.longitude
+            }, 'driver');
+            
+            return true;
+          } catch (error) {
+            console.error(`DriverSection: WebSocket connection attempt ${retryCount + 1} failed:`, error);
+            retryCount++;
+            
+            if (retryCount < maxRetries) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              return await attemptWebSocketConnection();
+            } else {
+              throw new Error(`WebSocket connection failed after ${maxRetries} attempts`);
+            }
+          }
+        };
+
+        const success = await attemptWebSocketConnection();
+        if (!success) {
+          throw new Error('Failed to establish WebSocket connection');
+        }
+        
+      } catch (error: any) {
+        console.error('DriverSection: Failed to go auto online:', error.message);
+        showToast('Failed to go online. Please check your connection and try again.', 'error');
+        setIsOnline(false);
+        webSocketService.disconnect(); // Ensure cleanup on failure
+      }
+    } catch (error) {
+      console.error('DriverSection: Error in auto online process:', error);
+      showToast('Error going online automatically', 'error');
+      setIsOnline(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Check KYC status on component mount
   useEffect(() => {
     checkKycStatus();
@@ -596,13 +704,15 @@ const DriverSection = () => {
         
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
-            <MaterialIcons name="arrow-back" size={24} color="#333" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Driver Section</Text>
-          <TouchableOpacity onPress={openSidePanel} style={styles.menuButton}>
-            <MaterialIcons name="menu" size={24} color="#333" />
-          </TouchableOpacity>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
+              <MaterialIcons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Driver Section</Text>
+          </View>
+          <View style={styles.headerBackground}>
+            <View style={styles.headerCircle} />
+          </View>
         </View>
 
 
@@ -848,14 +958,47 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     marginTop: 30,
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   backButton: {
-    padding: 8,
+    backgroundColor: '#075B5E',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     marginTop: 8,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#000',
+    marginLeft: 20,
+  },
+  headerBackground: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#075B5E',
+    opacity: 0.1,
+    zIndex: -1,
+  },
+  headerCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#075B5E',
+    opacity: 0.1,
   },
   menuButton: {
     padding: 8,
