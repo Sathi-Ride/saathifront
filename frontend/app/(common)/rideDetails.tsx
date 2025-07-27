@@ -474,7 +474,11 @@ const RideDetailsScreen = () => {
         from: locations.from,
         to: locations.to,
         fare: fare.toString(),
-        vehicle: rideDetails?.vehicleType?.name?.includes("MOTOR") ? "Moto" : "Ride",
+        vehicle: rideDetails?.vehicleType?.name || "Ride",
+        pickupLat: locations.pickupLat.toString(),
+        pickupLng: locations.pickupLng.toString(),
+        dropoffLat: locations.dropoffLat.toString(),
+        dropoffLng: locations.dropoffLng.toString(),
       },
     })
   }
@@ -486,7 +490,11 @@ const RideDetailsScreen = () => {
         from: locations.to,
         to: locations.from,
         fare: fare.toString(),
-        vehicle: rideDetails?.vehicleType?.name?.includes("MOTOR") ? "Moto" : "Ride",
+        vehicle: rideDetails?.vehicleType?.name || "Ride",
+        pickupLat: locations.dropoffLat.toString(),
+        pickupLng: locations.dropoffLng.toString(),
+        dropoffLat: locations.pickupLat.toString(),
+        dropoffLng: locations.pickupLng.toString(),
       },
     })
   }

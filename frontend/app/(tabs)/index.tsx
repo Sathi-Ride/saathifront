@@ -20,7 +20,7 @@ const { width, height } = Dimensions.get("window")
 const MAP_HEIGHT = height * 0.4;
 
 const PassengerHomeScreen = () => {
-  const { rideInProgress, driverName, from, to, fare, vehicle, progress: initialProgress } = useLocalSearchParams()
+  const { rideInProgress, driverName, from, to, fare, vehicle, progress: initialProgress, pickupLat, pickupLng, dropoffLat, dropoffLng } = useLocalSearchParams()
   const getString = (val: string | string[] | undefined) => (Array.isArray(val) ? (val[0] ?? "") : (val ?? ""))
 
   // Get current user role from global manager
@@ -50,6 +50,8 @@ const PassengerHomeScreen = () => {
     message: '',
     type: 'info',
   });
+  const [isSettingUpFromUrl, setIsSettingUpFromUrl] = useState(false);
+  const [hasUrlParameters, setHasUrlParameters] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     setToast({ visible: true, message, type });
@@ -67,6 +69,72 @@ const PassengerHomeScreen = () => {
   useEffect(() => {
     initializeApp();
   }, []);
+
+  // Handle URL parameters for repeat/return rides
+  useEffect(() => {
+    const handleUrlParameters = async () => {
+      console.log('Handling URL parameters, setting isSettingUpFromUrl to true');
+      setIsSettingUpFromUrl(true);
+      
+      // Check if we have URL parameters
+      const hasParams = !!(from && to && vehicle && fare);
+      setHasUrlParameters(hasParams);
+      console.log('Has URL parameters:', hasParams);
+      
+      // Handle pickup and destination locations from URL params
+      if (from && to) {
+        setPickupLocation(getString(from));
+        setDestinationLocation(getString(to));
+        
+        // Set coordinates if provided
+        if (pickupLat && pickupLng) {
+          const coords = { 
+            lat: parseFloat(getString(pickupLat)), 
+            lng: parseFloat(getString(pickupLng)) 
+          };
+          setPickupCoords(coords);
+        }
+        
+        if (dropoffLat && dropoffLng) {
+          const coords = { 
+            lat: parseFloat(getString(dropoffLat)), 
+            lng: parseFloat(getString(dropoffLng)) 
+          };
+          setDestinationCoords(coords);
+        }
+      }
+
+      // Handle vehicle type from URL params
+      if (vehicle && vehicleTypes.length > 0) {
+        const vehicleName = getString(vehicle);
+        const matchingVehicle = vehicleTypes.find(vt => 
+          vt.name.toLowerCase().includes(vehicleName.toLowerCase()) ||
+          vehicleName.toLowerCase().includes(vt.name.toLowerCase())
+        );
+        if (matchingVehicle) {
+          setSelectedVehicleType(matchingVehicle);
+        }
+      }
+
+      // Handle fare from URL params
+      if (fare) {
+        const fareValue = getString(fare);
+        console.log('Setting fare from URL:', fareValue);
+        setOfferPrice(fareValue);
+      }
+      
+      // Reset the flag after a short delay to allow state updates to complete
+      setTimeout(() => {
+        console.log('Resetting isSettingUpFromUrl to false');
+        setIsSettingUpFromUrl(false);
+      }, 1000);
+    };
+
+    // Only run after vehicle types are loaded
+    if (vehicleTypes.length > 0) {
+      handleUrlParameters();
+    }
+  }, [from, to, vehicle, fare, pickupLat, pickupLng, dropoffLat, dropoffLng, vehicleTypes]);
 
   const initializeApp = async () => {
     try {
@@ -87,17 +155,20 @@ const PassengerHomeScreen = () => {
       }
 
       // Set pickup location to current location name if in Kathmandu, else default to Kathmandu
-      if (location && isInKathmandu(location.latitude, location.longitude)) {
-        try {
-          const address = await locationService.getAddressFromCoordinates(location.latitude, location.longitude);
-          setPickupLocation(address);
-        } catch {
-          setPickupLocation('Current Location');
+      // Only if no pickup location is already set from URL parameters
+      if (!pickupLocation || pickupLocation === '') {
+        if (location && isInKathmandu(location.latitude, location.longitude)) {
+          try {
+            const address = await locationService.getAddressFromCoordinates(location.latitude, location.longitude);
+            setPickupLocation(address);
+          } catch {
+            setPickupLocation('Current Location');
+          }
+          setPickupCoords({ lat: location.latitude, lng: location.longitude });
+        } else {
+          setPickupLocation('Kathmandu');
+          setPickupCoords({ lat: 27.7172, lng: 85.324 });
         }
-        setPickupCoords({ lat: location.latitude, lng: location.longitude });
-      } else {
-        setPickupLocation('Kathmandu');
-        setPickupCoords({ lat: 27.7172, lng: 85.324 });
       }
 
       // Get vehicle types from API
@@ -116,8 +187,7 @@ const PassengerHomeScreen = () => {
       ];
       setVehicleTypes(sortedTypes);
       
-      // Set default vehicle type to 'bike' if available, else fallback to first
-      if (sortedTypes.length > 0) {
+      if (sortedTypes.length > 0 && !selectedVehicleType) {
         const bikeType = sortedTypes.find(t => t.name.toLowerCase().includes('bike'));
         setSelectedVehicleType(bikeType || sortedTypes[0]);
       }
@@ -126,7 +196,6 @@ const PassengerHomeScreen = () => {
       try {
         await locationService.startLocationTracking((newLocation) => {
           setCurrentLocation(newLocation);
-          // Optionally update pickup location if user hasn't changed it
           setPickupLocation(prev => {
             if (!prev || prev === '' || prev === 'Current Location' || prev === 'Kathmandu') {
               if (isInKathmandu(newLocation.latitude, newLocation.longitude)) {
@@ -142,7 +211,10 @@ const PassengerHomeScreen = () => {
             }
             return prev;
           });
-          setPickupCoords({ lat: newLocation.latitude, lng: newLocation.longitude });
+          // Only update coordinates if no specific pickup coordinates are set from URL parameters
+          if (!pickupCoords || (pickupCoords.lat === 27.7172 && pickupCoords.lng === 85.324)) {
+            setPickupCoords({ lat: newLocation.latitude, lng: newLocation.longitude });
+          }
         }, {
           accuracy: Location.Accuracy.Balanced,
           timeInterval: 30000,
@@ -186,6 +258,11 @@ const PassengerHomeScreen = () => {
 
   // --- MODIFIED CALCULATE FARE ---
   const calculateEstimatedFare = async () => {
+    // Skip fare calculation if we have URL parameters (repeat/return ride)
+    if (hasUrlParameters) {
+      return;
+    }
+
     if (!pickupLocation || !destinationLocation || !selectedVehicleType) {
       console.log('Missing required data for fare calculation:', {
         pickupLocation,
@@ -514,8 +591,22 @@ const PassengerHomeScreen = () => {
 
   // Auto-recalculate fare when vehicle type, pickup, or dropoff changes and all are set
   useEffect(() => {
+    console.log('Auto-recalculate useEffect triggered:', {
+      selectedVehicleType: selectedVehicleType?.name,
+      pickupCoords: !!pickupCoords,
+      destinationCoords: !!destinationCoords,
+      hasUrlParameters
+    });
+    
     if (selectedVehicleType && pickupCoords && destinationCoords) {
+      console.log('Auto-recalculating fare...');
       calculateEstimatedFare();
+    } else {
+      console.log('Skipping auto-recalculation because:', {
+        noVehicleType: !selectedVehicleType,
+        noPickupCoords: !pickupCoords,
+        noDestinationCoords: !destinationCoords
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVehicleType, pickupCoords, destinationCoords]);
