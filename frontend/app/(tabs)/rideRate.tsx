@@ -45,6 +45,12 @@ const RideRatingScreen = () => {
   const [loadingDetails, setLoadingDetails] = useState(false)
   const confettiAnimation = new Animated.Value(0)
 
+  // Compute the actual fare from trip details or use initial fare
+  const actualFare = tripDetails?.acceptedOffer?.offerAmount || 
+                    (tripDetails as any)?.offerPrice || 
+                    fare || 
+                    '0';
+
   useEffect(() => {
     // Start confetti animation
     if (showConfetti) {
@@ -196,7 +202,7 @@ const RideRatingScreen = () => {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color="#000" />
+          <Icon name="arrow-back" size={24} color="#075B5E" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Rate Your Ride</Text>
         <View style={styles.placeholder} />
@@ -206,7 +212,9 @@ const RideRatingScreen = () => {
         {/* Trip Summary Card */}
         <View style={styles.tripCard}>
           <View style={styles.tripHeader}>
-            <Icon name="check-circle" size={32} color="#4CAF50" />
+            <View style={styles.successIconContainer}>
+              <Icon name="check-circle" size={28} color="#4CAF50" />
+            </View>
             <Text style={styles.tripCompleteText}>Trip Completed!</Text>
           </View>
 
@@ -217,7 +225,9 @@ const RideRatingScreen = () => {
           ) : (
           <View style={styles.tripDetails}>
             <View style={styles.tripRow}>
-              <Icon name="person" size={20} color="#075B5E" />
+              <View style={styles.iconContainer}>
+                <Icon name="person" size={18} color="#075B5E" />
+              </View>
               <Text style={styles.tripLabel}>Driver:</Text>
               <Text style={styles.tripValue}>
                 {driverName || (tripDetails?.driver?.firstName && tripDetails?.driver?.lastName 
@@ -226,24 +236,32 @@ const RideRatingScreen = () => {
               </Text>
             </View>
             <View style={styles.tripRow}>
-              <Icon name="directions-car" size={20} color="#075B5E" />
+              <View style={styles.iconContainer}>
+                <Icon name="directions-car" size={18} color="#075B5E" />
+              </View>
               <Text style={styles.tripLabel}>Vehicle:</Text>
               <Text style={styles.tripValue}>{vehicle || tripDetails?.vehicle || 'Vehicle'}</Text>
             </View>
             <View style={styles.tripRow}>
-              <Icon name="payment" size={20} color="#075B5E" />
+              <View style={styles.iconContainer}>
+                <Icon name="payment" size={18} color="#075B5E" />
+              </View>
               <Text style={styles.tripLabel}>Fare:</Text>
-              <Text style={styles.tripValue}>रू{fare || tripDetails?.fare || '0'}</Text>
+              <Text style={styles.tripValue}>₹{parseFloat(actualFare).toFixed(0)}</Text>
             </View>
             <View style={styles.tripRow}>
-              <Icon name="location-on" size={20} color="#075B5E" />
+              <View style={styles.iconContainer}>
+                <Icon name="location-on" size={18} color="#075B5E" />
+              </View>
               <Text style={styles.tripLabel}>From:</Text>
               <Text style={styles.tripValue} numberOfLines={1}>
                 {from || (tripDetails?.pickUp?.address || 'Pickup Location')}
               </Text>
             </View>
             <View style={styles.tripRow}>
-              <Icon name="location-on" size={20} color="#EA2F14" />
+              <View style={styles.iconContainer}>
+                <Icon name="location-on" size={18} color="#EA2F14" />
+              </View>
               <Text style={styles.tripLabel}>To:</Text>
               <Text style={styles.tripValue} numberOfLines={1}>
                 {to || (tripDetails?.dropOff?.address || 'Dropoff Location')}
@@ -261,7 +279,7 @@ const RideRatingScreen = () => {
           <View style={styles.starContainer}>
             {[1, 2, 3, 4, 5].map((star) => (
               <TouchableOpacity key={star} onPress={() => handleStarPress(star - 1)} style={styles.starButton}>
-                <Icon name="star" size={40} color={rating >= star ? "#FFD700" : "#E0E0E0"} />
+                <Icon name="star" size={44} color={rating >= star ? "#FFD700" : "#E0E0E0"} />
               </TouchableOpacity>
             ))}
           </View>
@@ -310,25 +328,27 @@ const styles = StyleSheet.create({
     backgroundColor: "#f8f9fa",
   },
   header: {
-    backgroundColor: "#f8f9fa",
+    backgroundColor: "#fff",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingVertical: 16,
-    elevation: 4,
+    elevation: 2,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowRadius: 2,
     marginTop: 30,
   },
   backButton: {
     padding: 8,
+    borderRadius: 20,
+    backgroundColor: "#f8f9fa",
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#075B5E",
   },
   placeholder: {
@@ -340,117 +360,138 @@ const styles = StyleSheet.create({
   },
   tripCard: {
     backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    elevation: 2,
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 24,
+    elevation: 3,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 8,
   },
   tripHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  successIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#E8F5E8",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
   },
   tripCompleteText: {
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: 20,
+    fontWeight: "700",
     color: "#333",
-    marginLeft: 12,
   },
   tripDetails: {
-    gap: 12,
+    gap: 16,
   },
   tripRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
   },
+  iconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#f8f9fa",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   tripLabel: {
-    fontSize: 16,
+    fontSize: 15,
     color: "#666",
     minWidth: 60,
+    fontWeight: "500",
   },
   tripValue: {
-    fontSize: 16,
-    fontWeight: "500",
+    fontSize: 15,
+    fontWeight: "600",
     color: "#333",
     flex: 1,
   },
   ratingCard: {
     backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 24,
+    borderRadius: 20,
+    padding: 28,
     alignItems: "center",
-    marginBottom: 20,
-    elevation: 2,
+    marginBottom: 24,
+    elevation: 3,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 8,
   },
   ratingTitle: {
-    fontSize: 20,
-    fontWeight: "600",
+    fontSize: 22,
+    fontWeight: "700",
     color: "#333",
     marginBottom: 8,
   },
   ratingSubtitle: {
     fontSize: 16,
     color: "#075B5E",
-    fontWeight: "500",
-    marginBottom: 24,
+    fontWeight: "600",
+    marginBottom: 28,
   },
   starContainer: {
     flexDirection: "row",
-    gap: 8,
+    gap: 12,
   },
   starButton: {
-    padding: 4,
+    padding: 6,
   },
   feedbackCard: {
     backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-    elevation: 2,
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 28,
+    elevation: 3,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 8,
   },
   feedbackTitle: {
     fontSize: 18,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#333",
-    marginBottom: 12,
+    marginBottom: 16,
   },
   feedbackInput: {
     borderWidth: 1,
     borderColor: "#E0E0E0",
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 18,
     fontSize: 16,
     color: "#333",
-    minHeight: 100,
+    minHeight: 120,
     backgroundColor: "#f8f9fa",
+    textAlignVertical: "top",
   },
   submitButton: {
     backgroundColor: "#075B5E",
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
+    borderRadius: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 28,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
-    elevation: 2,
+    marginBottom: 16,
+    elevation: 3,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
   },
   submitButtonDisabled: {
     backgroundColor: "#ccc",
@@ -459,20 +500,20 @@ const styles = StyleSheet.create({
   submitButtonText: {
     color: "#fff",
     fontSize: 18,
-    fontWeight: "600",
+    fontWeight: "700",
     marginRight: 8,
   },
   submitIcon: {
     marginLeft: 4,
   },
   skipButton: {
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: "center",
   },
   skipButtonText: {
     color: "#666",
     fontSize: 16,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   confetti: {
     position: "absolute",

@@ -142,6 +142,10 @@ interface Ride {
     latitude: number;
     longitude: number;
   };
+  acceptedOffer?: {
+    offerAmount: number;
+  };
+  offerPrice?: number;
 }
 
 // Calculate distance in kilometers
@@ -390,7 +394,7 @@ const RideTrackerScreen = () => {
   const passengerName = params.passengerName as string;
   const from = params.from as string;
   const to = params.to as string;
-  const fare = params.fare as string;
+  const initialFare = params.fare as string;
   const vehicle = params.vehicle as string;
   const rideInProgress = params.rideInProgress === 'true';
   const rideCancelled = params.rideCancelled === 'true';
@@ -437,6 +441,12 @@ const RideTrackerScreen = () => {
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const mapRef = useRef<MapView>(null);
+
+  // Compute the actual fare from ride details or use initial fare
+  const actualFare = rideDetails?.acceptedOffer?.offerAmount || 
+                    (rideDetails as any)?.offerPrice || 
+                    initialFare || 
+                    '0';
 
   // --- ANIMATION REFS ---
   const progressAnimation = useRef(new Animated.Value(0)).current;
@@ -1429,7 +1439,7 @@ const RideTrackerScreen = () => {
                     : (rideDetails?.driver?.firstName || 'Driver'),
                   from: from || ((rideDetails as any)?.pickUpLocation || 'Pickup Location'),
                   to: to || ((rideDetails as any)?.dropOffLocation || 'Dropoff Location'),
-                  fare: fare || ((rideDetails as any)?.offerPrice?.toString() || '0'),
+                  fare: actualFare.toString(),
                   vehicle: vehicle || ((rideDetails as any)?.vehicleType?.name || 'Vehicle')
                 }
               });
@@ -1732,7 +1742,7 @@ const RideTrackerScreen = () => {
                     : (rideDetails?.driver?.firstName || 'Driver'),
                   from: from || ((rideDetails as any)?.pickUpLocation || 'Pickup Location'),
                   to: to || ((rideDetails as any)?.dropOffLocation || 'Dropoff Location'),
-                  fare: fare || ((rideDetails as any)?.offerPrice?.toString() || '0'),
+                  fare: actualFare.toString(),
                   vehicle: vehicle || ((rideDetails as any)?.vehicleType?.name || 'Vehicle')
                 }
               });
@@ -2366,7 +2376,7 @@ const RideTrackerScreen = () => {
             </View>
             <View style={styles.detailItem}>
               <MaterialIcons name="currency-rupee" size={20} color="#d6ab1e" />
-              <Text style={styles.detailText}>Fare: {fare}</Text>
+              <Text style={styles.detailText}>Fare: रू {parseFloat(actualFare).toFixed(0)}</Text>
             </View>
           </View>
           <View style={styles.detailRow}>

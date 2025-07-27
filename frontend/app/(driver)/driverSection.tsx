@@ -14,6 +14,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  BackHandler,
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
@@ -24,11 +25,12 @@ import SidePanel from '../(common)/sidepanel';
 import Toast from '../../components/ui/Toast';
 import { rideService, Ride } from '../utils/rideService';
 import { locationService } from '../utils/locationService';
-import apiClient from '../utils/apiClient';
+import apiClient, { getCurrentUserId } from '../utils/apiClient';
 import webSocketService from '../utils/websocketService';
 import { userRoleManager, useUserRole } from '../utils/userRoleManager';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import ConfirmationModal from '../../components/ui/ConfirmationModal';
+import RaiseFareModal from '../../components/ui/RaiseFareModal';
 import * as Haptics from 'expo-haptics';
 
 const { width, height } = Dimensions.get('window');
@@ -55,6 +57,7 @@ const DriverSection = () => {
   const [stopLocationTracking, setStopLocationTracking] = useState<(() => void) | null>(null);
   const [kycStatus, setKycStatus] = useState<'pending' | 'approved' | 'rejected' | 'verified' | null>(null);
   const [pendingOfferRideId, setPendingOfferRideId] = useState<string | null>(null);
+  const [pendingOfferId, setPendingOfferId] = useState<string | null>(null);
   const [pendingOffers, setPendingOffers] = useState<Ride[]>([]);
   const [showBackConfirmation, setShowBackConfirmation] = useState(false);
   
@@ -73,6 +76,9 @@ const DriverSection = () => {
   const [acceptedOfferId, setAcceptedOfferId] = useState<string | null>(null);
   const [showPassengerCancelledModal, setShowPassengerCancelledModal] = useState(false);
   const [cancelledRideId, setCancelledRideId] = useState<string | null>(null);
+  const [showRaiseFareModal, setShowRaiseFareModal] = useState(false);
+  const [selectedRideForRaise, setSelectedRideForRaise] = useState<Ride | null>(null);
+  const [raiseFareLoading, setRaiseFareLoading] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     setToast({ visible: true, message, type });
@@ -178,6 +184,7 @@ const DriverSection = () => {
       let newRideRequestListener: any;
       let offerAcceptedListener: any;
       let offerRejectedListener: any;
+      let offerCreatedListener: any;
       
       // Listen for new ride requests (driver namespace)
       newRideRequestListener = (event: any) => {
@@ -220,9 +227,22 @@ const DriverSection = () => {
       };
       webSocketService.on('offerAccepted', offerAcceptedListener, 'driver');
       
+      // Listen for offer created (driver namespace)
+      offerCreatedListener = (data: any) => {
+        if (!isMounted) return;
+        console.log('DriverSection: Offer created event received:', data);
+        if (data && data.code === 201 && data.data && data.data.rideOffer) {
+          const offer = data.data.rideOffer;
+          setPendingOfferId(offer._id);
+          console.log('DriverSection: Stored pending offer ID:', offer._id);
+        }
+      };
+      webSocketService.on('offerCreated', offerCreatedListener, 'driver');
+      
       // Listen for passenger cancelled ride (driver namespace)
       const passengerCancelledListener = (data: any) => {
         if (!isMounted) return;
+        console.log('DriverSection: passengerCancelledRide event received:', data);
         
         let rideId = null;
         if (data && data.rideId) {
@@ -233,20 +253,28 @@ const DriverSection = () => {
         
         
         if (rideId) {
+          // Check if this cancelled ride belongs to the current driver (for modal/toast)
+          // Do this BEFORE removing from availableRides to get accurate state
+          const hasActiveInvolvement = availableRides.some(ride => ride._id === rideId) || 
+                                      acceptedOfferId === rideId ||
+                                      pendingOfferRideId === rideId;
+          
+          // Check if we have any loading state for this ride (for state clearing)
+          const hasLoadingState = offerLoading[rideId] === true;
+          
+          console.log('DriverSection: Ride cancellation check - rideId:', rideId);
+          console.log('DriverSection: hasActiveInvolvement:', hasActiveInvolvement);
+          console.log('DriverSection: hasLoadingState:', hasLoadingState);
+          console.log('DriverSection: current pendingOfferRideId:', pendingOfferRideId);
+          console.log('DriverSection: current acceptedOfferId:', acceptedOfferId);
+          
           // Always remove cancelled rides from available rides (they shouldn't be shown to any driver)
           setAvailableRides(prev => {
-
             const filtered = prev.filter(ride => ride._id !== rideId);
-
             return filtered;
           });
           
-          // Check if this cancelled ride belongs to the current driver (for modal/toast)
-          const isMyRide = availableRides.some(ride => ride._id === rideId) || 
-                          acceptedOfferId === rideId ||
-                          pendingOfferRideId === rideId;
-          
-          if (isMyRide) {
+          if (hasActiveInvolvement) {
             
             setCancelledRideId(rideId);
             setShowPassengerCancelledModal(true);
@@ -260,10 +288,22 @@ const DriverSection = () => {
             // If this was the pending offer, clear the pending offer state
             if (pendingOfferRideId === rideId) {
               setPendingOfferRideId(null);
+              setPendingOfferId(null);
+              setSelectedRideForRaise(null);
+              setRaiseFareLoading(false);
+              setOfferLoading(prev => ({ ...prev, [rideId]: false }));
+              console.log('DriverSection: Cleared pending offer state due to ride cancellation');
             }
             
             showToast('Passenger cancelled the ride request', 'info');
           } else {
+            // Even if it's not "mine", clear any loading states for this ride
+            // This handles the case where offer was rejected but ride was cancelled later
+            if (hasLoadingState) {
+              setOfferLoading(prev => ({ ...prev, [rideId]: false }));
+              setRaiseFareLoading(false);
+              console.log('DriverSection: Cleared loading states for cancelled ride:', rideId);
+            }
             console.log('DriverSection: Ride cancelled but not mine, just removed from available rides:', rideId);
           }
         } else {
@@ -280,8 +320,24 @@ const DriverSection = () => {
           const rejectedOfferId = data.data._id;
           const rideId = data.data.rideId;
           
+          console.log('DriverSection: Offer rejected, clearing pending state for rideId:', rideId);
+          console.log('DriverSection: Current pendingOfferRideId:', pendingOfferRideId);
+          console.log('DriverSection: Current pendingOfferId:', pendingOfferId);
+          
+          // Clear pending offer state for this ride
           if (pendingOfferRideId === rideId) {
             setPendingOfferRideId(null);
+            setPendingOfferId(null);
+            setSelectedRideForRaise(null);
+            setRaiseFareLoading(false);
+            console.log('DriverSection: Cleared pending offer state');
+          } else {
+            console.log('DriverSection: pendingOfferRideId does not match, clearing anyway');
+            // Clear anyway to be safe
+            setPendingOfferRideId(null);
+            setPendingOfferId(null);
+            setSelectedRideForRaise(null);
+            setRaiseFareLoading(false);
           }
           
           // Clear the accepted offer state if this was the accepted offer
@@ -293,17 +349,25 @@ const DriverSection = () => {
           setOfferLoading(prev => ({ ...prev, [rideId]: false }));
           
           showToast('Your offer was rejected by passenger', 'info');
+          
+          // Force refresh available rides to ensure UI updates
+          setTimeout(() => {
+            loadMyRides();
+          }, 100);
         } else if (data && data.code && data.code !== 201) {
           // showToast(data.message || 'Error processing offer rejection', 'error');
         }
       };
       webSocketService.on('offerRejected', offerRejectedListener, 'driver');
       
+
+      
       // Cleanup function
       return () => {
         isMounted = false;
         if (newRideRequestListener) webSocketService.off('newRideRequest', newRideRequestListener, 'driver');
         if (offerAcceptedListener) webSocketService.off('offerAccepted', offerAcceptedListener, 'driver');
+        if (offerCreatedListener) webSocketService.off('offerCreated', offerCreatedListener, 'driver');
         if (passengerCancelledListener) webSocketService.off('passengerCancelledRide', passengerCancelledListener, 'driver');
         if (offerRejectedListener) webSocketService.off('offerRejected', offerRejectedListener, 'driver');
       };
@@ -376,8 +440,32 @@ const DriverSection = () => {
           webSocketService.disconnect(); // Ensure cleanup on failure
         }
       } else {
-        // Going offline
+        // Going offline - notify passengers
+        if (pendingOfferRideId && pendingOfferId) {
+          const driverId = await getCurrentUserId();
+          console.log('DriverSection: Driver going offline (toggle), notifying passengers:', {
+            rideId: pendingOfferRideId,
+            offerId: pendingOfferId,
+            driverId: driverId
+          });
+          
+          try {
+            // Use API to reject the offer when driver goes offline
+            await rideService.rejectRideOffer(pendingOfferRideId, pendingOfferId);
+            console.log('DriverSection: Successfully rejected offer when going offline (toggle)');
+          } catch (error) {
+            console.log('DriverSection: Could not reject offer, continuing with offline status');
+          }
+        }
+        
         setIsOnline(false);
+        // Clear any pending offers when going offline
+        setPendingOfferRideId(null);
+        setPendingOfferId(null);
+        setSelectedRideForRaise(null);
+        setOfferLoading({});
+        setRaiseFareLoading(false);
+        setAcceptedOfferId(null);
         showToast('You are now offline', 'info');
       }
     } catch (error) {
@@ -395,12 +483,18 @@ const DriverSection = () => {
       return;
     }
     
+    // Prevent making multiple offers for the same ride
+    if (pendingOfferRideId === ride._id) {
+      showToast('You have already made an offer for this ride. Please wait for passenger response.', 'error');
+      return;
+    }
+    
     try {
       console.log('handleMakeOffer called', ride);
       setOfferLoading(prev => ({ ...prev, [ride._id]: true }));
       setLoading(true);
       const offeredPrice = ride.offerPrice || 200;
-      await webSocketService.connect('undefined', 'driver');
+      await webSocketService.connect(undefined, 'driver');
       console.log('Emitting createRideOffer', { rideId: ride._id, offerAmount: offeredPrice });
       setPendingOfferRideId(ride._id);
       webSocketService.emit('createRideOffer', { rideId: ride._id, offerAmount: offeredPrice });
@@ -420,6 +514,54 @@ const DriverSection = () => {
       showToast('Ride declined', 'info');
     } catch (error) {
       showToast('Error declining ride', 'error');
+    }
+  };
+
+  // --- RAISE FARE HANDLERS ---
+  const handleRaiseFare = (ride: Ride) => {
+    // Prevent making multiple offers for the same ride
+    if (pendingOfferRideId === ride._id) {
+      showToast('You have already made an offer for this ride. Please wait for passenger response.', 'error');
+      return;
+    }
+    
+    // Clear any previous selection
+    setSelectedRideForRaise(null);
+    setShowRaiseFareModal(false);
+    
+    // Set new selection
+    setSelectedRideForRaise(ride);
+    setShowRaiseFareModal(true);
+  };
+
+  const handleRaiseFareSend = async (proposedFare: number) => {
+    if (!selectedRideForRaise) return;
+    
+    setRaiseFareLoading(true);
+    try {
+      // Connect to driver namespace for driver-specific events
+      await webSocketService.connect(undefined, 'driver');
+      
+      // Create a ride offer with the proposed fare (same as handleMakeOffer)
+      console.log('Emitting createRideOffer with raised fare', { 
+        rideId: selectedRideForRaise._id, 
+        offerAmount: proposedFare 
+      });
+      
+      setPendingOfferRideId(selectedRideForRaise._id);
+      webSocketService.emit('createRideOffer', { 
+        rideId: selectedRideForRaise._id, 
+        offerAmount: proposedFare 
+      }, 'driver');
+      
+      showToast('Counter offer sent to passenger!', 'success');
+      setShowRaiseFareModal(false);
+      setSelectedRideForRaise(null);
+    } catch (error) {
+      console.error('Error sending counter offer:', error);
+      showToast('Error sending counter offer. Please try again.', 'error');
+    } finally {
+      setRaiseFareLoading(false);
     }
   };
 
@@ -485,10 +627,36 @@ const DriverSection = () => {
     }
   };
 
-  const handleConfirmBack = () => {
+  const handleConfirmBack = async () => {
     setShowBackConfirmation(false);
+    
+    // Notify passengers when driver goes offline
+    if (pendingOfferRideId && pendingOfferId) {
+      const driverId = await getCurrentUserId();
+      console.log('DriverSection: Driver going offline, notifying passengers:', {
+        rideId: pendingOfferRideId,
+        offerId: pendingOfferId,
+        driverId: driverId
+      });
+      
+      try {
+        // Use API to reject the offer when driver goes offline
+        await rideService.rejectRideOffer(pendingOfferRideId, pendingOfferId);
+        console.log('DriverSection: Successfully rejected offer when going offline');
+      } catch (error) {
+        console.log('DriverSection: Could not reject offer, continuing with offline status');
+      }
+    }
+    
     // Turn driver offline before navigating
     setIsOnline(false);
+    // Clear any pending offers
+    setPendingOfferRideId(null);
+    setPendingOfferId(null);
+    setSelectedRideForRaise(null);
+    // Clear loading states
+    setOfferLoading({});
+    setRaiseFareLoading(false);
     // Disconnect WebSocket
     webSocketService.disconnect();
     // Navigate to driver dashboard
@@ -505,32 +673,67 @@ const DriverSection = () => {
         <View style={styles.passengerInfo}>
           <ProfileImage 
             photoUrl={item.passenger?.photo}
-            size={32}
+            size={36}
             fallbackIconColor="#333"
             fallbackIconSize={20}
           />
-          <Text style={styles.passengerName}>
-            {item.passenger ? item.passenger.firstName : ''} {item.passenger ? item.passenger.lastName : ''}
-          </Text>
+          <View style={styles.passengerDetails}>
+            <Text style={styles.passengerName}>
+              {item.passenger ? item.passenger.firstName : ''} {item.passenger ? item.passenger.lastName : ''}
+            </Text>
+          </View>
         </View>
-        <Text style={styles.ridePrice}>रू{item.offerPrice.toFixed(2)}</Text>
+        <View style={styles.fareContainer}>
+          <Text style={styles.fareLabel}>Passenger's Offer</Text>
+          <Text style={styles.ridePrice}>रू{item.offerPrice.toFixed(0)}</Text>
+          {item.estDistance && (
+            <Text style={styles.distanceText}>
+              {item.estDistance.distance?.text || 'N/A'} • {item.estDistance.duration?.text || 'N/A'}
+            </Text>
+          )}
+        </View>
       </View>
       
       <View style={styles.rideDetails}>
         <View style={styles.locationItem}>
-          <MapPin size={16} color="#666" />
-          <Text style={styles.locationText}>Pickup: {item.pickUp?.location || 'N/A'}</Text>
+          <MapPin size={14} color="#666" />
+          <Text style={styles.locationText} numberOfLines={1}>
+            {item.pickUp?.location || 'N/A'}
+          </Text>
         </View>
         <View style={styles.locationItem}>
-          <Navigation size={16} color="#666" />
-          <Text style={styles.locationText}>Drop: {item.dropOff?.location || 'N/A'}</Text>
+          <Navigation size={14} color="#666" />
+          <Text style={styles.locationText} numberOfLines={1}>
+            {item.dropOff?.location || 'N/A'}
+          </Text>
         </View>
         <View style={styles.locationItem}>
-          <Car size={16} color="#666" />
-          <Text style={styles.locationText}>Vehicle: {item.vehicleType ? item.vehicleType.name : ''}</Text>
+          <Car size={14} color="#666" />
+          <Text style={styles.locationText}>
+            {item.vehicleType ? item.vehicleType.name : ''}
+          </Text>
         </View>
       </View>
       
+      {/* Raise Fare Button - Full Width */}
+      <TouchableOpacity
+        style={[
+          styles.raiseFareButtonFull,
+          (pendingOfferRideId === item._id) && styles.raiseFareButtonDisabled
+        ]}
+        onPress={() => handleRaiseFare(item)}
+        disabled={loading || pendingOfferRideId === item._id}
+      >
+        <MaterialIcons name="trending-up" size={18} color={pendingOfferRideId === item._id ? "#ccc" : "#075B5E"} />
+        <Text style={[
+          styles.raiseFareButtonText,
+          pendingOfferRideId === item._id && styles.raiseFareButtonTextDisabled
+        ]}>
+          {pendingOfferRideId === item._id ? 'Offer Pending' : 'Raise Fare'}
+        </Text>
+      </TouchableOpacity>
+      
+      {/* Accept/Reject Buttons */}
       <View style={styles.rideActions}>
         <TouchableOpacity
           style={styles.declineButton}
@@ -539,18 +742,21 @@ const DriverSection = () => {
         >
           <Text style={styles.declineButtonText}>Decline</Text>
         </TouchableOpacity>
+        
         <TouchableOpacity
           onPress={() => handleMakeOffer(item)}
-          disabled={offerLoading[item._id] || loading || acceptedOfferId !== null}
+          disabled={offerLoading[item._id] || loading || acceptedOfferId !== null || pendingOfferRideId === item._id}
           style={[
             styles.acceptButton, 
-            (offerLoading[item._id] || acceptedOfferId !== null) && styles.acceptButtonDisabled
+            (offerLoading[item._id] || acceptedOfferId !== null || pendingOfferRideId === item._id) && styles.acceptButtonDisabled
           ]}
         >
           {offerLoading[item._id] ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : acceptedOfferId !== null ? (
             <Text style={styles.acceptButtonText}>Offer Accepted</Text>
+          ) : pendingOfferRideId === item._id ? (
+            <Text style={styles.acceptButtonText}>Offer Pending</Text>
           ) : (
             <Text style={styles.acceptButtonText}>Make Offer</Text>
           )}
@@ -640,17 +846,24 @@ const DriverSection = () => {
         const location = await locationService.getCurrentLocation();
         console.log('DriverSection: Current location for auto online:', location);
         
-        // Setup WebSocket with retry logic
         let retryCount = 0;
-        const maxRetries = 3;
+        const maxRetries = 2;
         
         const attemptWebSocketConnection = async () => {
           try {
             console.log(`DriverSection: Attempting WebSocket connection (attempt ${retryCount + 1}/${maxRetries})`);
+            
+            // Disconnect any existing connections first
+            webSocketService.disconnect('driver');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
             await setupWebSocket();
             
+            // Wait longer for connection to establish
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
             if (!webSocketService.isSocketConnected()) {
-              throw new Error('WebSocket connection failed');
+              throw new Error('WebSocket connection failed to establish');
             }
 
             // Ping status
@@ -659,13 +872,16 @@ const DriverSection = () => {
               longitude: location.longitude
             }, 'driver');
             
+            console.log('DriverSection: Auto online successful');
+            setIsOnline(true);
             return true;
           } catch (error) {
             console.error(`DriverSection: WebSocket connection attempt ${retryCount + 1} failed:`, error);
             retryCount++;
             
             if (retryCount < maxRetries) {
-              await new Promise(resolve => setTimeout(resolve, 2000));
+              console.log(`DriverSection: Retrying in 3 seconds... (${retryCount}/${maxRetries})`);
+              await new Promise(resolve => setTimeout(resolve, 3000));
               return await attemptWebSocketConnection();
             } else {
               throw new Error(`WebSocket connection failed after ${maxRetries} attempts`);
@@ -673,20 +889,17 @@ const DriverSection = () => {
           }
         };
 
-        const success = await attemptWebSocketConnection();
-        if (!success) {
-          throw new Error('Failed to establish WebSocket connection');
-        }
+        await attemptWebSocketConnection();
         
       } catch (error: any) {
-        console.error('DriverSection: Failed to go auto online:', error.message);
-        showToast('Failed to go online. Please check your connection and try again.', 'error');
+        console.log('DriverSection: Failed to go auto online:', error.message);
+        // Don't show error toast for auto-online failures, just log it
+        console.log('DriverSection: Auto online failed, driver can manually go online later');
         setIsOnline(false);
-        webSocketService.disconnect(); // Ensure cleanup on failure
+        webSocketService.disconnect('driver'); // Ensure cleanup on failure
       }
     } catch (error) {
-      console.error('DriverSection: Error in auto online process:', error);
-      showToast('Error going online automatically', 'error');
+      console.log('DriverSection: Error in auto online process:', error);
       setIsOnline(false);
     } finally {
       setLoading(false);
@@ -697,6 +910,25 @@ const DriverSection = () => {
   useEffect(() => {
     checkKycStatus();
   }, []);
+
+  // Handle back button and gesture navigation
+  useEffect(() => {
+    const backAction = () => {
+      // Show confirmation dialog when back is pressed (including swipe gesture)
+      if (isOnline || loading) {
+        setShowBackConfirmation(true);
+        return true; // Prevent default back action
+      }
+      return false; // Allow default back action
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    
+    return () => {
+      backHandler.remove();
+      setShowBackConfirmation(false); // Reset modal state on unmount
+    };
+  }, [isOnline, loading]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -781,7 +1013,7 @@ const DriverSection = () => {
                       longitude: currentLocation.lng + (index * 0.001),
                     }}
                     title={`${ride.passenger ? ride.passenger.firstName : ''} ${ride.passenger ? ride.passenger.lastName : ''}`}
-                    description={`₹${ride.offerPrice.toFixed(2)}`}
+                    description={`रू ${ride.offerPrice.toFixed(0)}`}
                   >
                     <View style={styles.rideMarker}>
                       <MaterialIcons 
@@ -841,7 +1073,8 @@ const DriverSection = () => {
                 data={availableRides}
                 renderItem={renderRideItem}
                 keyExtractor={(item) => item._id}
-                showsVerticalScrollIndicator={false}
+                showsVerticalScrollIndicator={true}
+                contentContainerStyle={styles.ridesListContainer}
                 refreshControl={
                   <RefreshControl
                     refreshing={refreshing}
@@ -871,7 +1104,7 @@ const DriverSection = () => {
               </Text>
               <Text style={styles.currentRideText}>From: {currentRide.pickUpLocation}</Text>
               <Text style={styles.currentRideText}>To: {currentRide.dropOffLocation}</Text>
-              <Text style={styles.currentRideText}>Fare: ₹{currentRide.offerPrice.toFixed(2)}</Text>
+              <Text style={styles.currentRideText}>Fare: रू {currentRide.offerPrice.toFixed(0)}</Text>
               <View style={styles.currentRideActions}>
                 <TouchableOpacity style={styles.startButton} onPress={handleStartRide}>
                   <Text style={styles.startButtonText}>Start Ride</Text>
@@ -940,6 +1173,20 @@ const DriverSection = () => {
           }}
           onCancel={() => {}}
           type="info"
+        />
+
+        <RaiseFareModal
+          visible={showRaiseFareModal}
+          onClose={() => {
+            setShowRaiseFareModal(false);
+            setSelectedRideForRaise(null);
+            setRaiseFareLoading(false);
+          }}
+          onSend={handleRaiseFareSend}
+          calculatedFare={selectedRideForRaise?.offerPrice || 0}
+          passengerProposedFare={selectedRideForRaise?.offerPrice || 0}
+          isDriver={true}
+          loading={raiseFareLoading}
         />
       </SafeAreaView>
   );
@@ -1121,6 +1368,9 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
   },
+  ridesListContainer: {
+    paddingBottom: 20,
+  },
   ridesHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1184,12 +1434,39 @@ const styles = StyleSheet.create({
   passengerInfo: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
+  },
+  passengerDetails: {
+    marginLeft: 12,
+    flex: 1,
   },
   passengerName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
-    marginLeft: 8,
+    marginBottom: 2,
+  },
+  ratingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ratingText: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 4,
+  },
+  fareContainer: {
+    alignItems: 'flex-end',
+  },
+  fareLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 2,
+  },
+  distanceText: {
+    fontSize: 11,
+    color: '#999',
+    marginTop: 2,
   },
   ridePrice: {
     fontSize: 18,
@@ -1197,7 +1474,7 @@ const styles = StyleSheet.create({
     color: '#075B5E',
   },
   rideDetails: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   locationItem: {
     flexDirection: 'row',
@@ -1211,36 +1488,78 @@ const styles = StyleSheet.create({
   },
   rideActions: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
+    marginTop: 16,
   },
   declineButton: {
     flex: 1,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#EA2F14',
-    borderRadius: 8,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
   },
   declineButtonText: {
     color: '#EA2F14',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
   },
   acceptButton: {
     flex: 1,
     backgroundColor: '#075B5E',
-    borderRadius: 8,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
   },
   acceptButtonDisabled: {
     backgroundColor: '#ccc',
   },
   acceptButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
+  },
+  raiseFareButton: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderColor: '#075B5E',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    minHeight: 48,
+  },
+  raiseFareButtonText: {
+    color: '#075B5E',
+    fontSize: 15,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+    raiseFareButtonFull: {
+    backgroundColor: '#fff',
+    borderColor: '#075B5E',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    minHeight: 48,
+    marginBottom: 12,
+  },
+  raiseFareButtonDisabled: {
+    backgroundColor: '#f5f5f5',
+    borderColor: '#ccc',
+  },
+  raiseFareButtonTextDisabled: {
+    color: '#ccc',
   },
   currentRideContainer: {
     padding: 16,

@@ -442,7 +442,7 @@ const RideDetailsScreen = () => {
               <div class="row"><span class="label">Driver</span><span class="value">${rideDetails?.driver ? rideDetails.driver.firstName + ' ' + rideDetails.driver.lastName : ''}</span></div>
               <div class="row"><span class="label">Vehicle</span><span class="value">${vehicleInfo.make} ${vehicleInfo.model} ${vehicleInfo.regNum}</span></div>
             </div>
-            <div class="fare">Fare: Rs ${getFare().toFixed(2)}</div>
+            <div class="fare">Fare: रू ${getFare().toFixed(0)}</div>
             <div class="footer">Thank you for riding with Saathi!</div>
           </body>
         </html>
@@ -769,7 +769,7 @@ const RideDetailsScreen = () => {
 
           <View style={styles.paymentRow}>
             <Text style={styles.paymentLabel}>Fare</Text>
-            <Text style={styles.paymentAmount}>Rs. {getFare().toFixed(2)}</Text>
+            <Text style={styles.paymentAmount}>रू {getFare().toFixed(0)}</Text>
           </View>
 
         </View>

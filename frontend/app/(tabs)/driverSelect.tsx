@@ -162,7 +162,7 @@ const DriverSelectionScreen = () => {
       
       // Simulate driver response
       const response: DriverResponse = {
-        message: 'I can do रू' + (bargainFare - 20).toFixed(2) + '. Is that okay?',
+        message: 'I can do रू' + (bargainFare - 20).toFixed(0) + '. Is that okay?',
         fare: bargainFare - 20,
       };
       setDriverResponse(response);
@@ -231,7 +231,7 @@ const DriverSelectionScreen = () => {
       </View>
       <View style={styles.driverActions}>
         <View style={styles.fareInfo}>
-          <Text style={styles.fareAmount}>रू{item.fare.toFixed(2)}</Text>
+          <Text style={styles.fareAmount}>रू{item.fare.toFixed(0)}</Text>
           <Text style={styles.etaText}>{item.eta} min</Text>
         </View>
         <TouchableOpacity 
@@ -290,7 +290,7 @@ const DriverSelectionScreen = () => {
                   <MaterialIcons name="remove" size={24} color="#fff" />
                 </TouchableOpacity>
                 <View style={styles.fareDisplay}>
-                  <Text style={styles.bargainFareAmount}>रू{bargainFare.toFixed(2)}</Text>
+                  <Text style={styles.bargainFareAmount}>रू{bargainFare.toFixed(0)}</Text>
                   <Text style={styles.bargainFareLabel}>Your Offer</Text>
                 </View>
                 <TouchableOpacity style={styles.fareControlButton} onPress={() => adjustFare(true)} disabled={loading}>
@@ -325,7 +325,7 @@ const DriverSelectionScreen = () => {
                 <Text style={styles.responseMessage}>"{driverResponse.message}"</Text>
                 <View style={styles.responseFare}>
                   <Text style={styles.responseFareLabel}>Counter Offer:</Text>
-                  <Text style={styles.responseFareAmount}>रू{driverResponse.fare.toFixed(2)}</Text>
+                  <Text style={styles.responseFareAmount}>रू{driverResponse.fare.toFixed(0)}</Text>
                 </View>
               </View>
             )}

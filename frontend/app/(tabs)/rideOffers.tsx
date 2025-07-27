@@ -10,10 +10,11 @@ import {
   Dimensions,
   BackHandler,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useNavigation } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import Toast from '../../components/ui/Toast';
 import ConfirmationModal from '../../components/ui/ConfirmationModal';
+
 import { rideService, RideOffer } from '../utils/rideService';
 import webSocketService from '../utils/websocketService';
 import { useUserRole } from '../utils/userRoleManager';
@@ -26,6 +27,7 @@ const { width, height } = Dimensions.get('window');
 const RideOffersScreen = () => {
   const params = useLocalSearchParams();
   const router = useRouter();
+  const navigation = useNavigation();
   
   const rideId = params.rideId as string;
   const from = params.from as string;
@@ -37,6 +39,7 @@ const RideOffersScreen = () => {
   const userRole = useUserRole();
 
   const [offers, setOffers] = useState<RideOffer[]>([]);
+  const [previousOffersCount, setPreviousOffersCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [newOffer, setNewOffer] = useState<any>(null);
@@ -47,6 +50,7 @@ const RideOffersScreen = () => {
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [rideCancelled, setRideCancelled] = useState(false);
+
   const [toast, setToast] = useState<{
     visible: boolean;
     message: string;
@@ -68,7 +72,7 @@ const RideOffersScreen = () => {
     setToast(prev => ({ ...prev, visible: false }));
   };
 
-  // Handle back button press
+  // Handle back button press and swipe gestures
   useEffect(() => {
     const backAction = () => {
       // Show confirmation dialog when back is pressed
@@ -77,11 +81,22 @@ const RideOffersScreen = () => {
     };
 
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    
+    // Handle swipe gestures - only for this screen
+    const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
+      // Only prevent navigation if we're on this screen and haven't confirmed
+      if (!cancelling && !rideCancelled) {
+        e.preventDefault();
+        setShowCancelConfirmation(true);
+      }
+    });
+
     return () => {
       backHandler.remove();
+      unsubscribe();
       setShowCancelConfirmation(false); // Reset modal state on unmount
     };
-  }, []);
+  }, [navigation, cancelling, rideCancelled]);
 
   useEffect(() => {
     console.log('RideOffers: Setting up for rideId:', rideId);
@@ -98,7 +113,7 @@ const RideOffersScreen = () => {
       webSocketService.disconnect('ride');
       webSocketService.disconnect('passenger');
     };
-  }, [rideId]);
+      }, [rideId]);
 
   const loadOffers = async () => {
     try {
@@ -119,6 +134,14 @@ const RideOffersScreen = () => {
       // Use REST API to get offers
       const offers = await rideService.getRideOffersForPassenger(rideId);
       console.log('RideOffers: Received offers:', offers);
+      
+      // Check if any offers were removed (driver went offline)
+      if (offers.length > 0 && previousOffersCount > offers.length) {
+        console.log('RideOffers: Some drivers went offline, offers reduced from', previousOffersCount, 'to', offers.length);
+        showToast('Some drivers went offline. Offers updated.', 'info');
+      }
+      
+      setPreviousOffersCount(offers.length);
       setOffers(offers);
       
     } catch (error) {
@@ -285,10 +308,8 @@ const RideOffersScreen = () => {
         
         showToast('Ride request cancelled', 'info');
         setRideCancelled(true);
-        // Navigate back to home screen and clear the stack
-        setTimeout(() => {
-          router.replace('/(tabs)');
-        }, 1500);
+        // Navigate back to home screen immediately
+        router.replace('/(tabs)');
       } else {
         showToast('Failed to cancel ride request', 'error');
       }
@@ -303,6 +324,8 @@ const RideOffersScreen = () => {
   const cancelCancelRideRequest = () => {
     setShowCancelConfirmation(false);
   };
+
+
 
   const setupWebSocket = async () => {
     try {
@@ -418,7 +441,7 @@ const RideOffersScreen = () => {
           showToast('Error: ' + (data.message || 'Unknown error'), 'error');
         }
       };
-      webSocketService.on('error', rideErrorListener, 'ride');
+            webSocketService.on('error', rideErrorListener, 'ride');
       
       // Cleanup function
       return () => {
@@ -426,9 +449,8 @@ const RideOffersScreen = () => {
         if (newOfferListener) webSocketService.off('newOffer', newOfferListener, 'passenger');
         if (rideAcceptedListener) webSocketService.off('rideAccepted', rideAcceptedListener, 'ride');
         if (rideCancelledListener) webSocketService.off('rideCancelled', rideCancelledListener, 'ride');
-        if (rideStatusUpdateListener) webSocketService.off('rideStatusUpdate', rideStatusUpdateListener, 'ride');
+                if (rideStatusUpdateListener) webSocketService.off('rideStatusUpdate', rideStatusUpdateListener, 'ride');
         if (rideErrorListener) webSocketService.off('error', rideErrorListener, 'ride');
-
       };
       
     } catch (error) {
@@ -445,7 +467,7 @@ const RideOffersScreen = () => {
         <View style={styles.driverInfo}>
           <ProfileImage 
             photoUrl={item.driver.photo}
-            size={48}
+            size={50}
             fallbackIconColor="#075B5E"
           />
           <View style={styles.driverDetails}>
@@ -462,8 +484,11 @@ const RideOffersScreen = () => {
           </View>
         </View>
         <View style={styles.priceContainer}>
-          <Text style={styles.price}>रू{item.offeredPrice.toFixed(2)}</Text>
-          <Text style={styles.priceLabel}>Offered Price</Text>
+          <Text style={styles.priceLabel}>Driver's Offer</Text>
+          <Text style={styles.price}>रू {item.offeredPrice.toFixed(0)}</Text>
+          <Text style={styles.priceDifference}>
+                          {item.offeredPrice > parseFloat(fare) ? '+' : ''}रू {(item.offeredPrice - parseFloat(fare)).toFixed(0)}
+          </Text>
         </View>
       </View>
 
@@ -474,13 +499,15 @@ const RideOffersScreen = () => {
         </View>
       )}
 
+
+
       <View style={styles.offerActions}>
         <TouchableOpacity
           style={[styles.actionButton, styles.rejectButton]}
           onPress={() => handleRejectOffer(item._id)}
           disabled={processing}
         >
-          <MaterialIcons name="close" size={20} color="#EA2F14" />
+          <MaterialIcons name="close" size={18} color="#EA2F14" />
           <Text style={styles.rejectButtonText}>Reject</Text>
         </TouchableOpacity>
         
@@ -489,7 +516,7 @@ const RideOffersScreen = () => {
           onPress={() => handleAcceptOffer(item._id)}
           disabled={processing}
         >
-          <MaterialIcons name="check" size={20} color="#fff" />
+          <MaterialIcons name="check" size={18} color="#fff" />
           <Text style={styles.acceptButtonText}>Accept</Text>
         </TouchableOpacity>
       </View>
@@ -541,7 +568,7 @@ const RideOffersScreen = () => {
         </View>
         <View style={styles.rideDetails}>
           <Text style={styles.vehicleType}>{vehicle}</Text>
-          <Text style={styles.yourOffer}>Your offer: रू{parseFloat(fare).toFixed(2)}</Text>
+          <Text style={styles.yourOffer}>Your offer: रू {parseFloat(fare).toFixed(0)}</Text>
         </View>
       </View>
 
@@ -559,7 +586,9 @@ const RideOffersScreen = () => {
           refreshing={refreshing}
           onRefresh={handleRefresh}
           ListEmptyComponent={renderEmptyState}
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={true}
+          scrollEnabled={true}
+          bounces={true}
         />
       )}
 
@@ -580,6 +609,8 @@ const RideOffersScreen = () => {
         onCancel={cancelCancelRideRequest}
         type="warning"
       />
+
+
     </View>
   );
 };
@@ -647,6 +678,8 @@ const styles = StyleSheet.create({
   },
   offersList: {
     padding: 16,
+    paddingBottom: 20,
+    flexGrow: 1,
   },
   offerCard: {
     backgroundColor: '#fff',
@@ -714,6 +747,11 @@ const styles = StyleSheet.create({
   priceLabel: {
     fontSize: 12,
     color: '#666',
+    marginBottom: 2,
+  },
+  priceDifference: {
+    fontSize: 11,
+    color: '#666',
     marginTop: 2,
   },
   messageContainer: {
@@ -732,16 +770,18 @@ const styles = StyleSheet.create({
   },
   offerActions: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
+    marginTop: 16,
   },
   actionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 10,
     borderWidth: 1,
+    minHeight: 48,
   },
   rejectButton: {
     backgroundColor: '#fff',
@@ -759,6 +799,17 @@ const styles = StyleSheet.create({
   },
   acceptButtonText: {
     color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  raiseFareButton: {
+    backgroundColor: '#fff',
+    borderColor: '#075B5E',
+    borderWidth: 1,
+  },
+  raiseFareButtonText: {
+    color: '#075B5E',
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,

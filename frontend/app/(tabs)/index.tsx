@@ -9,6 +9,7 @@ import { useRouter, useLocalSearchParams } from "expo-router"
 import SidePanel from "../(common)/sidepanel"
 import Toast from "../../components/ui/Toast"
 import LocationSearch from "../../components/LocationSearch"
+import RaiseFareModal from "../../components/ui/RaiseFareModal"
 import { locationService, LocationData, GoogleMapsPlace } from "../utils/locationService"
 import { rideService, VehicleType, RideRequest } from "../utils/rideService"
 import { userRoleManager, useUserRole } from "../utils/userRoleManager"
@@ -58,11 +59,9 @@ const PassengerHomeScreen = () => {
     setToast(prev => ({ ...prev, visible: false }));
   };
 
-  // --- STATE FOR PRICE ADJUSTMENT ---
-  const [canAdjustPrice, setCanAdjustPrice] = useState(false);
-  const [priceAdjustment, setPriceAdjustment] = useState(0); 
-  const [adjustUpCount, setAdjustUpCount] = useState(0);
-  const [adjustDownCount, setAdjustDownCount] = useState(0); 
+  // --- STATE FOR RAISE FARE MODAL ---
+  const [showRaiseFareModal, setShowRaiseFareModal] = useState(false);
+  const [raiseFareLoading, setRaiseFareLoading] = useState(false); 
 
   // Initialize location and vehicle types
   useEffect(() => {
@@ -226,10 +225,6 @@ const PassengerHomeScreen = () => {
         );
         console.log('Estimated fare calculated:', estimatedFare);
         setOfferPrice(estimatedFare.toString());
-        setCanAdjustPrice(true); // Enable price adjustment
-        setPriceAdjustment(0); // Reset adjustment
-        setAdjustUpCount(0);
-        setAdjustDownCount(0);
       } else {
         showToast('Could not calculate distance for fare', 'error');
       }
@@ -238,25 +233,22 @@ const PassengerHomeScreen = () => {
     }
   };
 
-  // --- PRICE ADJUSTMENT HANDLERS ---
-  const handleAdjustUp = () => {
-    if (canAdjustPrice && adjustUpCount < 2) {
-      const currentPrice = parseFloat(offerPrice) + priceAdjustment;
-      const newPrice = Math.round((currentPrice + 5) * 100) / 100;
-      const newAdjustment = newPrice - parseFloat(offerPrice);
-      setPriceAdjustment(newAdjustment);
-      setAdjustUpCount(prev => prev + 1);
-      if (adjustDownCount > 0) setAdjustDownCount(0); // Reset down count if going up
-    }
+  // --- RAISE FARE HANDLERS ---
+  const handleRaiseFare = () => {
+    setShowRaiseFareModal(true);
   };
-  const handleAdjustDown = () => {
-    if (canAdjustPrice && adjustDownCount < 2) {
-      const currentPrice = parseFloat(offerPrice) + priceAdjustment;
-      const newPrice = Math.round((currentPrice - 5) * 100) / 100;
-      const newAdjustment = newPrice - parseFloat(offerPrice);
-      setPriceAdjustment(newAdjustment);
-      setAdjustDownCount(prev => prev + 1);
-      if (adjustUpCount > 0) setAdjustUpCount(0); // Reset up count if going down
+
+  const handleRaiseFareSend = async (proposedFare: number) => {
+    setRaiseFareLoading(true);
+    try {
+      // Update the offer price with the proposed fare
+      setOfferPrice(proposedFare.toString());
+      setShowRaiseFareModal(false);
+      showToast('Fare raised successfully!', 'success');
+    } catch (error) {
+      showToast('Failed to raise fare', 'error');
+    } finally {
+      setRaiseFareLoading(false);
     }
   };
 
@@ -343,7 +335,7 @@ const PassengerHomeScreen = () => {
         dropOffLocation: destinationLocation,
         dropOffLat: dropOffLat,
         dropOffLng: dropOffLng,
-        offerPrice: Math.round((parseFloat(offerPrice) + priceAdjustment) * 100) / 100, // Use adjusted price with proper rounding
+        offerPrice: Math.round(parseFloat(offerPrice) * 100) / 100, // Use current offer price
       };
 
       console.log('Creating ride with data:', {
@@ -370,7 +362,7 @@ const PassengerHomeScreen = () => {
               rideId: ride._id,
               from: pickupLocation,
               to: destinationLocation,
-              fare: (Math.round((parseFloat(offerPrice) + priceAdjustment) * 100) / 100).toFixed(2),
+              fare: parseFloat(offerPrice).toFixed(0),
               vehicle: selectedVehicleType.name,
             },
           });
@@ -404,7 +396,7 @@ const PassengerHomeScreen = () => {
                   driverName: localDriverName,
                   from: pickupLocation,
                   to: destinationLocation,
-                  fare: (Math.round((parseFloat(offerPrice) + priceAdjustment) * 100) / 100).toFixed(2),
+                  fare: parseFloat(offerPrice).toFixed(0),
                   vehicle: selectedVehicleType?.name || 'Ride',
                 },
               })
@@ -431,7 +423,7 @@ const PassengerHomeScreen = () => {
           driverName: localDriverName,
           from: pickupLocation,
           to: destinationLocation,
-          fare: (Math.round((parseFloat(offerPrice) + priceAdjustment) * 100) / 100).toFixed(2),
+          fare: parseFloat(offerPrice).toFixed(0),
           vehicle: selectedVehicleType?.name || 'Ride',
           rideInProgress: localRideInProgress.toString(),
           progress: progress.toString(),
@@ -668,29 +660,20 @@ const PassengerHomeScreen = () => {
               />
             </View>
 
-            <View style={[styles.inputRow, { justifyContent: 'center', marginTop: 8, marginBottom: 8 }] }>
-              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                <View style={[styles.priceAdjustRow, { justifyContent: 'center', marginVertical: 8 }] }>
-                  <TouchableOpacity 
-                    style={[styles.adjustButton, { opacity: canAdjustPrice && adjustDownCount < 2 ? 1 : 0.5 }]}
-                    onPress={handleAdjustDown}
-                    disabled={!canAdjustPrice || adjustDownCount >= 2}
-                  >
-                    <Text style={styles.adjustButtonText}>-5</Text>
-                  </TouchableOpacity>
-                  <View style={[styles.pricePill, { marginHorizontal: 16 }] }>
-                    <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#075B5E', textAlign: 'center', letterSpacing: 1 }}>
-                      रू {offerPrice ? (Math.round((parseFloat(offerPrice) + priceAdjustment) * 100) / 100).toFixed(2) : '--'}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.adjustButton, { opacity: canAdjustPrice && adjustUpCount < 2 ? 1 : 0.5 }]}
-                    onPress={handleAdjustUp}
-                    disabled={!canAdjustPrice || adjustUpCount >= 2}
-                  >
-                    <Text style={styles.adjustButtonText}>+5</Text>
-                  </TouchableOpacity>
+            <View style={styles.priceSection}>
+              <View style={styles.priceContainer}>
+                <View style={styles.pricePill}>
+                  <Text style={styles.priceText}>
+                  रू {offerPrice ? parseFloat(offerPrice).toFixed(0) : '---'}
+                  </Text>
                 </View>
+                <TouchableOpacity 
+                  style={styles.raiseFareButton}
+                  onPress={handleRaiseFare}
+                  disabled={!offerPrice || loading}
+                >
+                  <Text style={styles.raiseFareButtonText}>Raise Fare</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -748,6 +731,14 @@ const PassengerHomeScreen = () => {
         message={toast.message}
         type={toast.type}
         onHide={hideToast}
+      />
+
+      <RaiseFareModal
+        visible={showRaiseFareModal}
+        onClose={() => setShowRaiseFareModal(false)}
+        onSend={handleRaiseFareSend}
+        calculatedFare={parseFloat(offerPrice) || 0}
+        loading={raiseFareLoading}
       />
     </View>
   )
@@ -975,41 +966,64 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  priceAdjustRow: {
+  priceSection: {
+    marginVertical: 16,
+    paddingHorizontal: 4,
+  },
+  priceContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 8,
-    gap: 16,
+    justifyContent: 'space-between',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 16,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   pricePill: {
-    minWidth: 90,
-    paddingHorizontal: 22,
-    paddingVertical: 10,
-    marginHorizontal: 16,
-    borderRadius: 24,
-    backgroundColor: '#e6f7fa',
-    borderWidth: 1.5,
-    borderColor: '#b2ebf2',
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginRight: 12,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  priceText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#075B5E',
+    textAlign: 'center',
+  },
+  raiseFareButton: {
+    backgroundColor: '#075B5E',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    minWidth: 100,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#075B5E',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.2,
     shadowRadius: 4,
-    elevation: 2,
+    elevation: 3,
   },
-  adjustButton: {
-    backgroundColor: '#075B5E',
-    borderRadius: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    marginHorizontal: 0,
-  },
-  adjustButtonText: {
+  raiseFareButtonText: {
     color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 14,
+    fontWeight: '600',
   },
 })
 

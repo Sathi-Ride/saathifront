@@ -262,6 +262,11 @@ class WebSocketService {
       console.log('WebSocket: Ride accepted event received:', data);
       this.emit('rideAccepted', data, 'passenger');
     });
+
+    socket.on('driverOffline', (data) => {
+      console.log('WebSocket: Driver offline event received:', data);
+      this.emit('driverOffline', data, 'passenger');
+    });
   }
 
   private setupRideEvents(socket: Socket) {
@@ -305,6 +310,8 @@ class WebSocketService {
         console.warn('WebSocket: Received invalid rideLocationUpdated data:', data);
       }
     });
+
+
 
     // Handle errors with suppression for expected cases
     socket.on('error', (error: any) => {
