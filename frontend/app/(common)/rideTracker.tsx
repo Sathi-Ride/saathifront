@@ -22,6 +22,7 @@ import ConfirmationModal from '../../components/ui/ConfirmationModal';
 import { locationService } from '../utils/locationService';
 import webSocketService from '../utils/websocketService';
 import { rideService } from '../utils/rideService';
+import { getCurrentUserId } from '../utils/apiClient';
 import MapView, { Marker, PROVIDER_GOOGLE, Polyline } from 'react-native-maps';
 import { useUserRole } from '../utils/userRoleManager';
 import { throttle } from 'lodash';
@@ -451,6 +452,7 @@ const RideTrackerScreen = () => {
   // --- ANIMATION REFS ---
   const progressAnimation = useRef(new Animated.Value(0)).current;
   const pulseAnimation = useRef(new Animated.Value(1)).current;
+  const unreadBadgeAnimation = useRef(new Animated.Value(1)).current;
 
   // --- REFS ---
   const isMounted = useRef(true);
@@ -481,13 +483,38 @@ const RideTrackerScreen = () => {
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     console.log('[showToast]', message, 'type:', type);
     setToast({ visible: true, message, type });
-    if (type === 'success') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    else if (type === 'error') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    else Haptics.selectionAsync();
-    setTimeout(hideToast, 3000);
+    
+    // Different haptic feedback and duration based on type
+    if (type === 'success') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTimeout(hideToast, 3000);
+    } else if (type === 'error') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setTimeout(hideToast, 4000);
+    } else {
+      // For info messages (like new messages), use longer duration and success haptic
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTimeout(hideToast, 4000); // Longer duration for message notifications
+    }
   };
   const hideToast = () => {
     setToast(prev => ({ ...prev, visible: false }));
+  };
+
+  // Animate unread badge when new message is received
+  const animateUnreadBadge = () => {
+    Animated.sequence([
+      Animated.timing(unreadBadgeAnimation, {
+        toValue: 1.3,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(unreadBadgeAnimation, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
   };
 
   // --- BACK BUTTON HANDLER ---
@@ -696,6 +723,9 @@ const RideTrackerScreen = () => {
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', async () => {
       setIsComponentActive(true);
+      
+      // Clear unread messages indicator when returning to ride tracker
+      setHasUnreadMessages(false);
       
       // EARLY EXIT: Don't attempt reconnection for cancelled rides
       if (rideStatus === 'cancelled' || rideCancelled) {
@@ -1454,10 +1484,56 @@ const RideTrackerScreen = () => {
     // Handle new message
     const handleNewMessage = (data: any) => {
       console.log('[RideTracker] New message received:', data);
-      if (data && data.rideId === rideId) {
-        setHasUnreadMessages(true);
-        showToast('New message received', 'info');
+      
+      // Handle different message event formats
+      let messageData = data;
+      let rideIdFromMessage = null;
+      
+      // Check if data is wrapped in a response object
+      if (data?.data) {
+        messageData = data.data;
       }
+      
+      // Extract rideId from different possible locations
+      if (messageData?.rideId) {
+        rideIdFromMessage = messageData.rideId;
+      } else if (messageData?.ride) {
+        rideIdFromMessage = messageData.ride;
+      } else if (data?.rideId) {
+        rideIdFromMessage = data.rideId;
+      }
+      
+      // Verify this message belongs to the current ride
+      if (rideIdFromMessage === rideId) {
+                setHasUnreadMessages(true);
+        
+        // Animate the unread badge
+        animateUnreadBadge();
+        
+        // Get sender information for better toast message
+        const senderName = messageData?.sender?.firstName || 
+                          messageData?.senderName || 
+                          (messageData?.senderRole === 'driver' ? 'Driver' : 'Passenger');
+        
+        // Get message preview if available
+        const messagePreview = messageData?.content || messageData?.message || '';
+        const previewText = messagePreview.length > 30 ? messagePreview.substring(0, 30) + '...' : messagePreview;
+        
+        // Show more informative toast with message preview
+        const toastMessage = previewText ? 
+          `New message: "${previewText}"` : 
+          `New message: ${senderName}`;
+        showToast(toastMessage, 'info');
+        
+        // Add haptic feedback for new messages
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    };
+
+    // Handle message created event (alternative event name)
+    const handleMessageCreated = (data: any) => {
+      console.log('[RideTracker] Message created event received:', data);
+      handleNewMessage(data);
     };
 
     // Set up event listeners
@@ -1467,6 +1543,7 @@ const RideTrackerScreen = () => {
     webSocketService.on('rideCompleted', handleRideCompleted, 'ride');
     webSocketService.on('rideLocationUpdated', handleRideLocationUpdated, 'ride');
     webSocketService.on('newMessage', handleNewMessage, 'ride');
+    webSocketService.on('messageCreated', handleMessageCreated, 'ride');
     
     console.log('[RideTracker] WebSocket event listeners set up successfully');
 
@@ -1479,6 +1556,7 @@ const RideTrackerScreen = () => {
       webSocketService.off('rideCompleted', handleRideCompleted, 'ride');
       webSocketService.off('rideLocationUpdated', handleRideLocationUpdated, 'ride');
       webSocketService.off('newMessage', handleNewMessage, 'ride');
+      webSocketService.off('messageCreated', handleMessageCreated, 'ride');
     };
   }, [rideId, userRole, rideStatus, rideCancelled, router, isWebSocketConnected, isLoadingDetails]);
 
@@ -1556,16 +1634,16 @@ const RideTrackerScreen = () => {
       });
     }
 
-    // Completed route (green)
-    if (completedRoute.length > 1) {
-      polylines.push({
-        coordinates: completedRoute.map(point => ({ latitude: point.lat, longitude: point.lng })),
-        strokeColor: '#4CAF50',
-        strokeWidth: 6,
-        zIndex: 2,
-        key: 'completed-route',
-      });
-    }
+    // Completed route (green) - REMOVED as requested
+    // if (completedRoute.length > 1) {
+    //   polylines.push({
+    //     coordinates: completedRoute.map(point => ({ latitude: point.lat, longitude: point.lng })),
+    //     strokeColor: '#4CAF50',
+    //     strokeWidth: 6,
+    //     zIndex: 2,
+    //     key: 'completed-route',
+    //   });
+    // }
 
     return polylines;
   };
@@ -1902,6 +1980,9 @@ const RideTrackerScreen = () => {
 
   const handleMessageOtherUser = () => {
     console.log('[handleMessageOtherUser] Navigating to messaging');
+    
+    // Clear unread messages indicator when navigating to messaging
+    setHasUnreadMessages(false);
     
     // Get actual names from rideDetails instead of params
     const actualDriverName = rideDetails?.driver?.firstName && rideDetails?.driver?.lastName 
@@ -2296,8 +2377,8 @@ const RideTrackerScreen = () => {
           {/* Route Polylines */}
           {mainRoutePolyline.length > 0 && driverLocation && pickupLocation && dropoffLocation ? (
             <>
-              {/* Completed Route (solid green) - only after pickup */}
-              {completedRoute.length > 1 && pickupLocation && dropoffLocation && (() => {
+              {/* Completed Route (solid green) - REMOVED as requested */}
+              {/* {completedRoute.length > 1 && pickupLocation && dropoffLocation && (() => {
                 // Find the index in completedRoute where the driver reaches the pickup location
                 const pickupIdx = completedRoute.findIndex(point =>
                   Math.abs(point.lat - pickupLocation.lat) < 0.0005 && Math.abs(point.lng - pickupLocation.lng) < 0.0005
@@ -2314,7 +2395,7 @@ const RideTrackerScreen = () => {
                   );
                 }
                 return null;
-              })()}
+              })()} */}
               {/* Pickup to Dropoff (solid blue) */}
               {findClosestPointIndex(mainRoutePolyline, pickupLocation) < findClosestPointIndex(mainRoutePolyline, dropoffLocation) && (
                 <Polyline
@@ -2421,7 +2502,19 @@ const RideTrackerScreen = () => {
               style={[styles.contactButton, { backgroundColor: '#2196F3' }]}
               onPress={handleMessageOtherUser}
             >
-              <MaterialIcons name="message" size={18} color="#fff" />
+              <View style={{ position: 'relative' }}>
+                <MaterialIcons name="message" size={18} color="#fff" />
+                {hasUnreadMessages && (
+                  <Animated.View 
+                    style={[
+                      styles.unreadBadge,
+                      {
+                        transform: [{ scale: unreadBadgeAnimation }]
+                      }
+                    ]}
+                  />
+                )}
+              </View>
               <Text style={styles.contactButtonText}>Message</Text>
             </TouchableOpacity>
           </View>
@@ -2748,6 +2841,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#F44336',
     textAlign: 'center',
+  },
+  unreadBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    backgroundColor: '#FF4444',
+    borderRadius: 6,
+    width: 12,
+    height: 12,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  unreadBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
 });
 

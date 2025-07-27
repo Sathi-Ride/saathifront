@@ -102,12 +102,17 @@ class WebSocketService {
       });
 
       socket.on('connect_error', (error) => {
-        console.error(`WebSocket: Connection error to ${namespace} namespace:`, error);
+        // Suppress connection timeout errors from logs
+        const errorMessage = error.message || '';
+        if (errorMessage.includes('WebSocket connection timeout') || errorMessage.includes('timeout')) {
+          console.log(`WebSocket: Connection timeout to ${namespace} namespace (suppressed from error logs)`);
+        } else {
+          console.error(`WebSocket: Connection error to ${namespace} namespace:`, error);
+        }
         this.isConnected[namespace] = false;
         
         // Handle specific errors for ride namespace
         if (namespace === 'ride') {
-          const errorMessage = error.message || '';
           if (errorMessage.includes('Ride is no longer active') || errorMessage.includes('Ride is not in cancelable status')) {
             console.log(`WebSocket: Ride is cancelled, suppressing connection error`);
             // Don't throw this error, just log it
@@ -152,7 +157,13 @@ class WebSocketService {
       });
 
     } catch (error) {
-      console.error(`WebSocket: Connection failed to ${namespace} namespace:`, error);
+      // Suppress connection timeout errors from logs
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('WebSocket connection timeout')) {
+        console.log(`WebSocket: Connection timeout to ${namespace} namespace (suppressed from error logs)`);
+      } else {
+        console.error(`WebSocket: Connection failed to ${namespace} namespace:`, error);
+      }
       this.isConnected[namespace] = false;
       throw error;
     }
@@ -216,11 +227,16 @@ class WebSocketService {
     
     // Also handle connection errors
     socket.on('connect_error', (error) => {
-      console.error(`WebSocket: Connection error in ${namespace} namespace:`, error);
+      // Suppress connection timeout errors from logs
+      const errorMessage = error.message || '';
+      if (errorMessage.includes('WebSocket connection timeout') || errorMessage.includes('timeout')) {
+        console.log(`WebSocket: Connection timeout in ${namespace} namespace (suppressed from error logs)`);
+      } else {
+        console.error(`WebSocket: Connection error in ${namespace} namespace:`, error);
+      }
       
       // Handle specific errors for ride namespace
       if (namespace === 'ride') {
-        const errorMessage = error.message || '';
         if (errorMessage.includes('Ride is no longer active') || errorMessage.includes('Ride is not in cancelable status')) {
           console.log(`WebSocket: Ride is cancelled, suppressing connection error in ${namespace} namespace`);
           return;

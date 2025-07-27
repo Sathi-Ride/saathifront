@@ -373,7 +373,13 @@ const DriverSection = () => {
       };
       
     } catch (error) {
-      console.error('DriverSection: WebSocket setup failed:', error);
+      // Suppress connection timeout errors from logs
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('WebSocket connection timeout') || errorMessage.includes('timeout')) {
+        console.log('DriverSection: WebSocket connection timeout (suppressed from error logs)');
+      } else {
+        console.error('DriverSection: WebSocket setup failed:', error);
+      }
       throw error; 
     }
   }
@@ -876,7 +882,13 @@ const DriverSection = () => {
             setIsOnline(true);
             return true;
           } catch (error) {
-            console.error(`DriverSection: WebSocket connection attempt ${retryCount + 1} failed:`, error);
+            // Suppress connection timeout errors from logs
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            if (errorMessage.includes('WebSocket connection timeout') || errorMessage.includes('timeout')) {
+              console.log(`DriverSection: WebSocket connection timeout attempt ${retryCount + 1} (suppressed from error logs)`);
+            } else {
+              console.error(`DriverSection: WebSocket connection attempt ${retryCount + 1} failed:`, error);
+            }
             retryCount++;
             
             if (retryCount < maxRetries) {
