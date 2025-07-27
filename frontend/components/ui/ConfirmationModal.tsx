@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, Animated, StyleSheet, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, Animated, StyleSheet, Modal, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 interface ConfirmationModalProps {
@@ -90,7 +90,9 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
       transparent={true}
       animationType="none"
       onRequestClose={onCancel}
+      statusBarTranslucent={true}
     >
+      <StatusBar backgroundColor="rgba(0, 0, 0, 0.4)" barStyle="light-content" />
       <Animated.View style={[styles.overlay, { opacity }]}> 
         <Animated.View style={[styles.container, { transform: [{ scale }], borderColor }]}> 
           <View style={[styles.iconCircle, { backgroundColor: bg }]}>
@@ -119,6 +121,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
+    paddingTop: StatusBar.currentHeight || 0,
   },
   container: {
     backgroundColor: '#fff',

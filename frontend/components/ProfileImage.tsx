@@ -63,7 +63,7 @@ const ProfileImage: React.FC<ProfileImageProps> = ({
         console.log('ProfileImage: Loading timeout, showing fallback');
         setImageLoading(false);
         setImageError(true);
-      }, 5000); // 5 second timeout
+      }, 2000);
 
       return () => clearTimeout(timeout);
     }

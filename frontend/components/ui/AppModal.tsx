@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, Animated, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, Animated, StyleSheet, Dimensions, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 interface AppModalProps {
@@ -66,25 +66,28 @@ const AppModal: React.FC<AppModalProps> = ({
   const { icon, color, bg } = iconMap[type];
 
   return (
-    <Animated.View style={[styles.overlay, { opacity }]}>  
-      <Animated.View style={[styles.modal, { transform: [{ scale }] }]}>  
-        <View style={[styles.iconCircle, { backgroundColor: bg }]}>  
-          <Ionicons name={icon as any} size={40} color={color} />
-        </View>
-        {title && <Text style={styles.title}>{title}</Text>}
-        <Text style={styles.message}>{message}</Text>
-        <View style={styles.buttonRow}>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-            <Text style={styles.closeButtonText}>{actionText ? 'Close' : 'OK'}</Text>
-          </TouchableOpacity>
-          {actionText && onAction && (
-            <TouchableOpacity style={[styles.actionButton, { backgroundColor: color }]} onPress={onAction}>
-              <Text style={styles.actionButtonText}>{actionText}</Text>
+    <>
+      <StatusBar backgroundColor="rgba(0, 0, 0, 0.35)" barStyle="light-content" />
+      <Animated.View style={[styles.overlay, { opacity }]}>  
+        <Animated.View style={[styles.modal, { transform: [{ scale }] }]}>  
+          <View style={[styles.iconCircle, { backgroundColor: bg }]}>  
+            <Ionicons name={icon as any} size={40} color={color} />
+          </View>
+          {title && <Text style={styles.title}>{title}</Text>}
+          <Text style={styles.message}>{message}</Text>
+          <View style={styles.buttonRow}>
+            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+              <Text style={styles.closeButtonText}>{actionText ? 'Close' : 'OK'}</Text>
             </TouchableOpacity>
-          )}
-        </View>
+            {actionText && onAction && (
+              <TouchableOpacity style={[styles.actionButton, { backgroundColor: color }]} onPress={onAction}>
+                <Text style={styles.actionButtonText}>{actionText}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
       </Animated.View>
-    </Animated.View>
+    </>
   );
 };
 
@@ -99,6 +102,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 9999,
+    paddingTop: StatusBar.currentHeight || 0,
   },
   modal: {
     width: width * 0.8,
