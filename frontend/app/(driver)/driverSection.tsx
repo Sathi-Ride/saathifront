@@ -690,7 +690,7 @@ const DriverSection = () => {
           </View>
         </View>
         <View style={styles.fareContainer}>
-          <Text style={styles.fareLabel}>Passenger's Offer</Text>
+          <Text style={styles.fareLabel}>Passenger&apos;s Offer</Text>
           <Text style={styles.ridePrice}>रू{item.offerPrice.toFixed(0)}</Text>
           {item.estDistance && (
             <Text style={styles.distanceText}>

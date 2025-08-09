@@ -220,7 +220,7 @@ const License = () => {
 
           {/* Driver License Photo */}
           <View style={styles.photoSection}>
-            <Text style={styles.sectionTitle}>Front of Driver's License</Text>
+            <Text style={styles.sectionTitle}>Front of Driver&apos;s License</Text>
             <View style={styles.imagePlaceholder}>
               {driverLicensePhoto ? (
                 <Image source={{ uri: driverLicensePhoto }} style={styles.image} />

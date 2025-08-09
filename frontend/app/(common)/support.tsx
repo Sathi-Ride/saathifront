@@ -116,7 +116,7 @@ export default function Support() {
           </View>
           <Text style={styles.welcomeTitle}>How can we help you?</Text>
           <Text style={styles.welcomeSubtitle}>
-            We're here to assist you with any questions or issues you may have. Choose from the options below to get
+            We&apos;re here to assist you with any questions or issues you may have. Choose from the options below to get
             started.
           </Text>
         </View>
@@ -187,7 +187,7 @@ export default function Support() {
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            Thank you for using Saathi! We're committed to providing you with the best ride-sharing experience.
+            Thank you for using Saathi! We&apos;re committed to providing you with the best ride-sharing experience.
           </Text>
         </View>
       </ScrollView>

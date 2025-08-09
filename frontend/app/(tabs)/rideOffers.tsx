@@ -484,7 +484,7 @@ const RideOffersScreen = () => {
           </View>
         </View>
         <View style={styles.priceContainer}>
-          <Text style={styles.priceLabel}>Driver's Offer</Text>
+          <Text style={styles.priceLabel}>Driver&apos;s Offer</Text>
           <Text style={styles.price}>रू {item.offeredPrice.toFixed(0)}</Text>
           <Text style={styles.priceDifference}>
                           {item.offeredPrice > parseFloat(fare) ? '+' : ''}रू {(item.offeredPrice - parseFloat(fare)).toFixed(0)}
@@ -528,7 +528,7 @@ const RideOffersScreen = () => {
       <MaterialIcons name="local-taxi" size={64} color="#ccc" />
       <Text style={styles.emptyStateTitle}>No offers yet</Text>
       <Text style={styles.emptyStateSubtitle}>
-        We're searching for drivers in your area. This may take a few moments.
+        We&apos;re searching for drivers in your area. This may take a few moments.
       </Text>
       <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh}>
         <MaterialIcons name="refresh" size={20} color="#075B5E" />
