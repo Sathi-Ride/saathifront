@@ -30,7 +30,7 @@ class WebSocketService {
   private sockets: { [key: string]: Socket | null } = {};
   private isConnected: { [key: string]: boolean } = {};
   private connectionPromises: { [key: string]: Promise<void> | null } = {};
-  private baseUrl: string = Constants.expoConfig?.extra?.WEBSOCKET_URL || 'http://192.168.1.71:9000';
+  private baseUrl: string = Constants.expoConfig?.extra?.WEBSOCKET_URL || 'http://192.168.0.14:9000';
 
   async connect(rideId?: string, namespace: 'driver' | 'passenger' | 'ride' = 'driver'): Promise<void> {
     try {

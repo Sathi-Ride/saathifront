@@ -15,13 +15,13 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to location to track your position for ride sharing."
       },
       "config": {
-        "googleMapsApiKey": "AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg"
+        "googleMapsApiKey": "dummyapikey"
       }
     },
     "android": {
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg"
+          "apiKey": "dummyapikey"
         }
       },
       "adaptiveIcon": {
@@ -70,7 +70,7 @@
       "WEBSOCKET_URL": "http://192.168.18.4:9000",
       "PUBLIC_ASSET_URL": "http://192.168.18.4:9000",
       "DEFAULT_BASE_URL": "http://localhost:3000",
-      "GOOGLE_MAPS_API_KEY": "AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg",
+      "GOOGLE_MAPS_API_KEY": "dummyapikey",
       "SUPPORT_PHONE": "+977980010100",
       "SUPPORT_EMAIL": "support@saathiapp.com",
       "FACEBOOK_URL": "https://www.facebook.com/saathiapp",

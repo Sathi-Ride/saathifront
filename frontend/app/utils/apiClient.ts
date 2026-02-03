@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import webSocketService from './websocketService';
 import Constants from 'expo-constants';
 
-const API_URL = Constants.expoConfig?.extra?.API_URL || 'http://192.168.1.71:9000/api/v1';
+const API_URL = Constants.expoConfig?.extra?.API_URL || 'http://192.168.0.14:9000/api/v1';
 
 const apiClient = axios.create({
   baseURL: API_URL,
