@@ -66,9 +66,9 @@
       "eas": {
         "projectId": "f9a54f7e-1f52-4ebf-8463-421f4fe29ff3"
       },
-      "API_URL": "http://192.168.0.8:9000/api/v1",
-      "WEBSOCKET_URL": "http://192.168.0.8:9000",
-      "PUBLIC_ASSET_URL": "http://192.168.0.8:9000",
+      "API_URL": "http://192.168.18.4:9000/api/v1",
+      "WEBSOCKET_URL": "http://192.168.18.4:9000",
+      "PUBLIC_ASSET_URL": "http://192.168.18.4:9000",
       "DEFAULT_BASE_URL": "http://localhost:3000",
       "GOOGLE_MAPS_API_KEY": "AIzaSyDbYiu_14LlULrCl6WXSNvTgEy3yBCKkQg",
       "SUPPORT_PHONE": "+977980010100",
